@@ -22,6 +22,7 @@ def test_settings(tmp_path: Path) -> Settings:
     os.environ["STORAGE_ROOT"] = str(storage)
     os.environ["GOOGLE_DRIVE_API_KEY"] = "test-key"
     os.environ["PUBLIC_FRONTEND_URL"] = "http://localhost:3000"
+    os.environ["ADMIN_DASHBOARD_KEY"] = ""
     return reload_settings()
 
 

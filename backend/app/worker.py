@@ -122,7 +122,14 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
             "failures": 0,
         },
     )
-    db.flush()
+    db.commit()
+
+    # Refresh instances after the early commit so per-image progress is always
+    # written even if one file fails later.
+    event = db.get(Event, event.id)
+    job = db.get(Job, job.id)
+    if not event or not job:
+        raise RuntimeError("Event or job missing after sync initialization commit")
     files = list_public_drive_images(
         api_key=settings.google_drive_api_key,
         folder_id=event.drive_folder_id,
@@ -205,7 +212,6 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
                     db.execute(delete(Face).where(Face.photo_id == photo.id))
 
                 faces = face_engine.embed_faces(image_bytes=image_bytes, max_faces=20)
-                matched_faces += len(faces)
                 for face_idx, face in enumerate(faces):
                     bx, by, bw, bh = face.bbox
                     db.add(
@@ -224,6 +230,10 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
                             cluster_label=None,
                         )
                     )
+                # Flush each image's writes so validation/DB errors are handled
+                # in this iteration, not deferred to a later commit.
+                db.flush()
+                matched_faces += len(faces)
                 refreshed += 1
             else:
                 reused += 1
@@ -231,6 +241,11 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
         except Exception as exc:
             failures += 1
             logger.warning("Skipping Drive file %s due to error: %s", file_id, exc)
+            db.rollback()
+            event = db.get(Event, event.id)
+            job = db.get(Job, job.id)
+            if not event or not job:
+                raise RuntimeError("Event or job missing after sync rollback")
 
         percent = max(2.0, min(95.0, (idx / total) * 100.0))
         mark_job_progress(db, job, progress_percent=percent, stage=f"processing image {idx}/{total}")
@@ -249,8 +264,11 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
                 "current_file_name": str(file_item.get("name") or file_id),
             },
         )
-        if idx % 10 == 0:
-            db.commit()
+        db.commit()
+        event = db.get(Event, event.id)
+        job = db.get(Job, job.id)
+        if not event or not job:
+            raise RuntimeError("Event or job missing after sync progress commit")
 
     current_photos = db.execute(select(Photo).where(Photo.event_id == event.id)).scalars().all()
     for photo in current_photos:

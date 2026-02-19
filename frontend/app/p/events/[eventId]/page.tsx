@@ -21,6 +21,13 @@ function num(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function isEventProcessingActive(eventData: EventResponse): boolean {
+  if (eventData.status === "syncing" || eventData.status === "processing_clusters") {
+    return true;
+  }
+  return eventData.jobs.some((job) => job.status === "queued" || job.status === "running");
+}
+
 export default function EventDashboardPage() {
   const params = useParams<{ eventId: string }>();
   const eventId = useMemo(() => String(params?.eventId || ""), [params]);
@@ -29,6 +36,7 @@ export default function EventDashboardPage() {
   const [loading, setLoading] = useState(false);
   const [resyncing, setResyncing] = useState(false);
   const [error, setError] = useState("");
+  const processingActive = eventData ? isEventProcessingActive(eventData) : false;
 
   useEffect(() => {
     if (!eventId) return;
@@ -54,9 +62,10 @@ export default function EventDashboardPage() {
 
   useEffect(() => {
     if (!eventData || !adminToken.trim()) return;
+    if (!isEventProcessingActive(eventData)) return;
     const timer = setInterval(() => {
       void loadEvent();
-    }, 3000);
+    }, 1000);
     return () => clearInterval(timer);
   }, [eventData, adminToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -98,7 +107,7 @@ export default function EventDashboardPage() {
           </label>
           <div className="flex flex-wrap gap-2">
             <button className="btn btn-primary" type="button" onClick={loadEvent} disabled={loading || !adminToken.trim()}>
-              {loading ? "Loading..." : "Load Event"}
+              {loading || processingActive ? "Loading..." : "Load Event"}
             </button>
             <button className="btn btn-secondary" type="button" onClick={triggerResync} disabled={resyncing || !eventData}>
               {resyncing ? "Queueing..." : "Queue Re-sync"}
@@ -162,10 +171,15 @@ export default function EventDashboardPage() {
                       <div className="h-2 rounded-full bg-accent transition-all duration-300" style={{ width: `${job.progress_percent}%` }} />
                     </div>
                     {job.type === "sync_event" ? (
-                      <p className="mt-2 text-xs text-muted">
-                        Listed {num(job.payload?.total_listed)} | Completed {num(job.payload?.completed)} | Processed{" "}
-                        {num(job.payload?.processed)} | Faces {num(job.payload?.matched_faces)} | Errors {num(job.payload?.failures)}
-                      </p>
+                      <>
+                        <p className="mt-2 text-xs text-muted">
+                          Listed {num(job.payload?.total_listed)} | Completed {num(job.payload?.completed)} | Processed{" "}
+                          {num(job.payload?.processed)} | Faces {num(job.payload?.matched_faces)} | Errors {num(job.payload?.failures)}
+                        </p>
+                        {typeof job.payload?.current_file_name === "string" && job.payload.current_file_name ? (
+                          <p className="mt-1 text-xs text-muted">Current file: {job.payload.current_file_name}</p>
+                        ) : null}
+                      </>
                     ) : null}
                     {job.type === "match_guest" ? (
                       <p className="mt-2 text-xs text-muted">

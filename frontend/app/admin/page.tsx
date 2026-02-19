@@ -31,6 +31,15 @@ function num(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function hasActiveProcessing(events: AdminEventOverview[]): boolean {
+  return events.some((event) => {
+    if (event.status === "syncing" || event.status === "processing_clusters") {
+      return true;
+    }
+    return event.latest_jobs.some((job) => job.status === "queued" || job.status === "running");
+  });
+}
+
 function JobSummary({ job }: { job: JobResponse }) {
   return (
     <div className="rounded-md border border-line bg-white p-3">
@@ -45,10 +54,15 @@ function JobSummary({ job }: { job: JobResponse }) {
         <div className="h-2 rounded-full bg-accent transition-all duration-300" style={{ width: `${num(job.progress_percent)}%` }} />
       </div>
       {job.type === "sync_event" ? (
-        <p className="mt-2 text-xs text-muted">
-          Listed {num(job.payload?.total_listed)} | Completed {num(job.payload?.completed)} | Processed {num(job.payload?.processed)} |
-          Faces {num(job.payload?.matched_faces)} | Errors {num(job.payload?.failures)}
-        </p>
+        <>
+          <p className="mt-2 text-xs text-muted">
+            Listed {num(job.payload?.total_listed)} | Completed {num(job.payload?.completed)} | Processed {num(job.payload?.processed)} |
+            Faces {num(job.payload?.matched_faces)} | Errors {num(job.payload?.failures)}
+          </p>
+          {typeof job.payload?.current_file_name === "string" && job.payload.current_file_name ? (
+            <p className="mt-1 text-xs text-muted">Current file: {job.payload.current_file_name}</p>
+          ) : null}
+        </>
       ) : null}
       {job.type === "match_guest" ? (
         <p className="mt-2 text-xs text-muted">
@@ -214,9 +228,10 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!data || !adminKey.trim()) return;
+    if (!hasActiveProcessing(data.events || [])) return;
     const timer = setInterval(() => {
       void loadOverview();
-    }, 4000);
+    }, 1500);
     return () => clearInterval(timer);
   }, [data, adminKey, limit]); // eslint-disable-line react-hooks/exhaustive-deps
 
