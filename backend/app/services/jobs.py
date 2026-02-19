@@ -13,6 +13,8 @@ JOB_MATCH_GUEST = "match_guest"
 
 JOB_STATUS_QUEUED = "queued"
 JOB_STATUS_RUNNING = "running"
+JOB_STATUS_CANCEL_REQUESTED = "cancel_requested"
+JOB_STATUS_CANCELED = "canceled"
 JOB_STATUS_COMPLETED = "completed"
 JOB_STATUS_FAILED = "failed"
 
@@ -92,3 +94,31 @@ def mark_job_failed(db: Session, job: Job, message: str) -> None:
     job.error_text = str(message or "Job failed")
     job.updated_at = utc_now()
     db.add(job)
+
+
+def mark_job_canceled(db: Session, job: Job, reason: str = "Canceled by admin") -> None:
+    job.status = JOB_STATUS_CANCELED
+    job.stage = "canceled"
+    job.error_text = str(reason or "Canceled")
+    job.updated_at = utc_now()
+    job.completed_at = utc_now()
+    db.add(job)
+
+
+def request_job_cancel(db: Session, job: Job, reason: str = "Cancel requested by admin") -> Job:
+    if job.status in {JOB_STATUS_COMPLETED, JOB_STATUS_FAILED, JOB_STATUS_CANCELED}:
+        return job
+    if job.status == JOB_STATUS_QUEUED:
+        mark_job_canceled(db, job, reason=reason)
+        return job
+    if job.status == JOB_STATUS_RUNNING:
+        job.status = JOB_STATUS_CANCEL_REQUESTED
+        job.stage = "cancel_requested"
+        job.error_text = str(reason or "Cancel requested by admin")
+        job.updated_at = utc_now()
+        db.add(job)
+        return job
+    if job.status == JOB_STATUS_CANCEL_REQUESTED:
+        return job
+    mark_job_canceled(db, job, reason=reason)
+    return job

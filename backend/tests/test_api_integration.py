@@ -67,6 +67,68 @@ def test_resync_requires_admin_token(client, db_session: Session) -> None:
     assert ok.json()["type"] == "sync_event"
 
 
+def test_cancel_job_requires_valid_auth(client, db_session: Session) -> None:
+    created = client.post(
+        "/api/v1/events",
+        json={"name": "Cancelable Event", "drive_link": "https://drive.google.com/drive/folders/1abcDEF_cancel01"},
+    )
+    assert created.status_code == 201
+    body = created.json()
+    job_id = body["initial_job_id"]
+
+    unauth = client.post(f"/api/v1/jobs/{job_id}/cancel")
+    assert unauth.status_code == 401
+
+    bad = client.post(f"/api/v1/jobs/{job_id}/cancel", headers={"Authorization": "Bearer wrong-token"})
+    assert bad.status_code == 403
+
+    ok = client.post(f"/api/v1/jobs/{job_id}/cancel", headers={"Authorization": f"Bearer {body['admin_token']}"})
+    assert ok.status_code == 200
+    assert ok.json()["status"] == "canceled"
+
+    job = db_session.get(Job, job_id)
+    assert job is not None
+    assert job.status == "canceled"
+
+
+def test_cancel_running_job_sets_cancel_requested(client, db_session: Session) -> None:
+    created = client.post(
+        "/api/v1/events",
+        json={"name": "Cancelable Running Event", "drive_link": "https://drive.google.com/drive/folders/1abcDEF_cancel02"},
+    )
+    assert created.status_code == 201
+    body = created.json()
+    job_id = body["initial_job_id"]
+
+    job = db_session.get(Job, job_id)
+    assert job is not None
+    job.status = "running"
+    job.stage = "running"
+    db_session.add(job)
+    db_session.commit()
+
+    response = client.post(f"/api/v1/jobs/{job_id}/cancel", headers={"Authorization": f"Bearer {body['admin_token']}"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancel_requested"
+
+    db_session.refresh(job)
+    assert job.status == "cancel_requested"
+
+
+def test_admin_key_can_cancel_event_job(client, db_session: Session, test_settings) -> None:
+    test_settings.admin_dashboard_key = "dashboard-secret"
+    created = client.post(
+        "/api/v1/events",
+        json={"name": "Admin Cancel Event", "drive_link": "https://drive.google.com/drive/folders/1abcDEF_cancel03"},
+    )
+    assert created.status_code == 201
+    job_id = created.json()["initial_job_id"]
+
+    response = client.post(f"/api/v1/jobs/{job_id}/cancel", headers={"Authorization": "Bearer dashboard-secret"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "canceled"
+
+
 def test_guest_upload_and_status_flow(client, db_session: Session) -> None:
     created = client.post(
         "/api/v1/events",

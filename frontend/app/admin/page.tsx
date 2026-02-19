@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import Card from "@/components/card";
 import StatusPill from "@/components/status-pill";
-import { AdminEventOverview, AdminEventsResponse, getAdminEvents, JobResponse } from "@/lib/api";
+import { AdminEventOverview, AdminEventsResponse, cancelJob, getAdminEvents, JobResponse } from "@/lib/api";
 
 const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
 const backendBase = apiBase.replace(/\/api\/v1$/, "");
@@ -13,9 +13,10 @@ const ADMIN_KEY_STORAGE = "grabpic_admin_dashboard_key";
 function statusTone(status: string): "neutral" | "success" | "warn" | "danger" {
   if (status === "completed" || status === "ready") return "success";
   if (status === "failed") return "danger";
-  if (status === "queued" || status === "running" || status === "syncing" || status === "processing_clusters") {
+  if (status === "queued" || status === "running" || status === "cancel_requested" || status === "syncing" || status === "processing_clusters") {
     return "warn";
   }
+  if (status === "canceled") return "neutral";
   return "neutral";
 }
 
@@ -36,18 +37,42 @@ function hasActiveProcessing(events: AdminEventOverview[]): boolean {
     if (event.status === "syncing" || event.status === "processing_clusters") {
       return true;
     }
-    return event.latest_jobs.some((job) => job.status === "queued" || job.status === "running");
+    return event.latest_jobs.some((job) => job.status === "queued" || job.status === "running" || job.status === "cancel_requested");
   });
 }
 
-function JobSummary({ job }: { job: JobResponse }) {
+function canCancelJob(status: string): boolean {
+  return status === "queued" || status === "running";
+}
+
+function JobSummary({
+  job,
+  onCancel,
+  canceling,
+}: {
+  job: JobResponse;
+  onCancel: (jobId: string) => void;
+  canceling: boolean;
+}) {
   return (
     <div className="rounded-md border border-line bg-white p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-medium">
           {job.type} <span className="font-mono text-xs text-muted">{job.job_id}</span>
         </p>
-        <StatusPill label={job.status} tone={statusTone(job.status)} />
+        <div className="flex items-center gap-2">
+          <StatusPill label={job.status} tone={statusTone(job.status)} />
+          {canCancelJob(job.status) ? (
+            <button
+              className="btn btn-secondary !px-2 !py-1 text-xs"
+              type="button"
+              onClick={() => onCancel(job.job_id)}
+              disabled={canceling}
+            >
+              {canceling ? "Canceling..." : "Cancel"}
+            </button>
+          ) : null}
+        </div>
       </div>
       <p className="mt-1 text-sm text-muted">{job.stage || "-"}</p>
       <div className="mt-2 h-2 w-full rounded-full bg-bg">
@@ -75,7 +100,15 @@ function JobSummary({ job }: { job: JobResponse }) {
   );
 }
 
-function EventCard({ event }: { event: AdminEventOverview }) {
+function EventCard({
+  event,
+  onCancelJob,
+  cancelingJobId,
+}: {
+  event: AdminEventOverview;
+  onCancelJob: (jobId: string) => void;
+  cancelingJobId: string;
+}) {
   return (
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -129,7 +162,14 @@ function EventCard({ event }: { event: AdminEventOverview }) {
           <h3 className="font-[var(--font-heading)] text-base font-semibold">Latest Jobs</h3>
           <div className="mt-2 grid gap-2">
             {event.latest_jobs.length ? (
-              event.latest_jobs.map((job) => <JobSummary key={job.job_id} job={job} />)
+              event.latest_jobs.map((job) => (
+                <JobSummary
+                  key={job.job_id}
+                  job={job}
+                  onCancel={onCancelJob}
+                  canceling={cancelingJobId === job.job_id}
+                />
+              ))
             ) : (
               <p className="text-sm text-muted">No jobs yet.</p>
             )}
@@ -196,6 +236,7 @@ export default function AdminPage() {
   const [limit, setLimit] = useState(60);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [cancelingJobId, setCancelingJobId] = useState("");
   const [data, setData] = useState<AdminEventsResponse | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string>("");
 
@@ -223,6 +264,21 @@ export default function AdminPage() {
       setError(err instanceof Error ? err.message : "Could not load admin dashboard");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleCancelJob(jobId: string) {
+    const key = adminKey.trim();
+    if (!key) return;
+    setCancelingJobId(jobId);
+    setError("");
+    try {
+      await cancelJob(jobId, key);
+      await loadOverview();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not cancel job");
+    } finally {
+      setCancelingJobId("");
     }
   }
 
@@ -277,7 +333,11 @@ export default function AdminPage() {
         ) : null}
       </Card>
 
-      {data?.events?.length ? data.events.map((event) => <EventCard key={event.event_id} event={event} />) : null}
+      {data?.events?.length
+        ? data.events.map((event) => (
+            <EventCard key={event.event_id} event={event} onCancelJob={handleCancelJob} cancelingJobId={cancelingJobId} />
+          ))
+        : null}
       {data && !data.events.length ? (
         <Card>
           <p className="text-sm text-muted">No events found.</p>

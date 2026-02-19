@@ -16,8 +16,11 @@ from app.services.jobs import (
     JOB_CLUSTER_EVENT,
     JOB_MATCH_GUEST,
     JOB_SYNC_EVENT,
+    JOB_STATUS_CANCELED,
+    JOB_STATUS_CANCEL_REQUESTED,
     acquire_next_job,
     create_job,
+    mark_job_canceled,
     mark_job_completed,
     mark_job_failed,
     mark_job_progress,
@@ -63,6 +66,17 @@ def run_forever() -> None:
                 job = db.get(Job, job_id)
                 if not job:
                     continue
+                if job.status in {JOB_STATUS_CANCELED, JOB_STATUS_CANCEL_REQUESTED}:
+                    mark_job_canceled(db, job, reason="Canceled by admin")
+                    if job.query_id:
+                        query = db.get(GuestQuery, job.query_id)
+                        if query:
+                            query.status = "failed"
+                            query.error_text = "Canceled by admin"
+                            query.message = "Matching was canceled by admin."
+                            db.add(query)
+                    db.commit()
+                    continue
                 mark_job_failed(db, job, str(exc))
                 if job.query_id:
                     query = db.get(GuestQuery, job.query_id)
@@ -107,6 +121,9 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
     if not event:
         mark_job_failed(db, job, "Event not found")
         return
+    if _is_cancel_requested(db, job.id):
+        _cancel_sync_or_cluster_job(db=db, job=job, event=event)
+        return
 
     mark_job_progress(db, job, progress_percent=1.0, stage="listing_drive_files")
     upsert_job_payload(
@@ -130,6 +147,9 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
     job = db.get(Job, job.id)
     if not event or not job:
         raise RuntimeError("Event or job missing after sync initialization commit")
+    if _is_cancel_requested(db, job.id):
+        _cancel_sync_or_cluster_job(db=db, job=job, event=event)
+        return
     files = list_public_drive_images(
         api_key=settings.google_drive_api_key,
         folder_id=event.drive_folder_id,
@@ -164,6 +184,9 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
     matched_faces = 0
 
     for idx, file_item in enumerate(files, start=1):
+        if _is_cancel_requested(db, job.id):
+            _cancel_sync_or_cluster_job(db=db, job=job, event=event)
+            return
         file_id = str(file_item.get("id") or "")
         if not file_id:
             continue
@@ -313,6 +336,9 @@ def _process_cluster_event(db: Session, job: Job, settings: Settings) -> None:
     if not event:
         mark_job_failed(db, job, "Event not found")
         return
+    if _is_cancel_requested(db, job.id):
+        _cancel_sync_or_cluster_job(db=db, job=job, event=event)
+        return
     mark_job_progress(db, job, progress_percent=20.0, stage="clustering_faces")
     upsert_job_payload(job, {"phase": "clustering"})
     cluster_count = cluster_event_faces(
@@ -339,6 +365,9 @@ def _process_match_guest(db: Session, job: Job, settings: Settings, face_engine:
     if not query:
         mark_job_failed(db, job, "Guest query not found")
         return
+    if _is_cancel_requested(db, job.id):
+        _cancel_match_job(db=db, job=job, query=query)
+        return
     event = db.get(Event, query.event_id)
     if not event:
         query.status = "failed"
@@ -354,6 +383,9 @@ def _process_match_guest(db: Session, job: Job, settings: Settings, face_engine:
     mark_job_progress(db, job, progress_percent=10.0, stage="loading_selfie")
     upsert_job_payload(job, {"phase": "matching", "steps": "loading_selfie"})
     db.flush()
+    if _is_cancel_requested(db, job.id):
+        _cancel_match_job(db=db, job=job, query=query)
+        return
 
     selfie_path = to_absolute_path(settings, query.selfie_path)
     if not selfie_path.exists():
@@ -378,6 +410,9 @@ def _process_match_guest(db: Session, job: Job, settings: Settings, face_engine:
 
     mark_job_progress(db, job, progress_percent=45.0, stage="matching faces")
     upsert_job_payload(job, {"phase": "matching", "steps": "matching_faces"})
+    if _is_cancel_requested(db, job.id):
+        _cancel_match_job(db=db, job=job, query=query)
+        return
 
     ranked_matches, used_threshold, adaptive_used = collect_ranked_photo_matches(
         db,
@@ -406,6 +441,9 @@ def _process_match_guest(db: Session, job: Job, settings: Settings, face_engine:
 
     mark_job_progress(db, job, progress_percent=70.0, stage="assembling_photo_results")
     upsert_job_payload(job, {"phase": "matching", "steps": "assembling_photo_results"})
+    if _is_cancel_requested(db, job.id):
+        _cancel_match_job(db=db, job=job, query=query)
+        return
     results = store_guest_results_from_ranked(
         db,
         query=query,
@@ -448,6 +486,28 @@ def _run_cleanup(settings: Settings) -> None:
             query.selfie_path = ""
             db.add(query)
         db.commit()
+
+
+def _is_cancel_requested(db: Session, job_id: str) -> bool:
+    state = db.execute(select(Job.status).where(Job.id == job_id).limit(1)).scalar_one_or_none()
+    return state == JOB_STATUS_CANCEL_REQUESTED
+
+
+def _cancel_sync_or_cluster_job(db: Session, job: Job, event: Event) -> None:
+    event.status = "failed"
+    db.add(event)
+    upsert_job_payload(job, {"phase": "canceled"})
+    mark_job_canceled(db, job, reason="Canceled by admin")
+
+
+def _cancel_match_job(db: Session, job: Job, query: GuestQuery) -> None:
+    query.status = "failed"
+    query.error_text = "Canceled by admin"
+    query.message = "Matching was canceled by admin."
+    query.completed_at = datetime.now(timezone.utc)
+    db.add(query)
+    upsert_job_payload(job, {"phase": "canceled"})
+    mark_job_canceled(db, job, reason="Canceled by admin")
 
 
 if __name__ == "__main__":

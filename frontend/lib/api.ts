@@ -160,6 +160,14 @@ export async function resyncEvent(eventId: string, adminToken: string): Promise<
   return parseResponse<JobResponse>(response);
 }
 
+export async function cancelJob(jobId: string, token: string): Promise<JobResponse> {
+  const response = await fetch(`${API_BASE}/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  return parseResponse<JobResponse>(response);
+}
+
 export async function resolveGuestEvent(slug: string, guestCode: string): Promise<GuestResolveResponse> {
   const response = await fetch(`${API_BASE}/guest/events/resolve`, {
     method: "POST",

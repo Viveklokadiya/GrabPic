@@ -6,13 +6,14 @@ import { useParams } from "next/navigation";
 
 import Card from "@/components/card";
 import StatusPill from "@/components/status-pill";
-import { EventResponse, getEvent, resyncEvent } from "@/lib/api";
+import { cancelJob, EventResponse, getEvent, resyncEvent } from "@/lib/api";
 import { loadEventSecrets } from "@/lib/local";
 
 function toneForStatus(status: string): "neutral" | "success" | "warn" | "danger" {
   if (status === "completed" || status === "ready") return "success";
   if (status === "failed") return "danger";
-  if (status === "running" || status === "syncing" || status === "processing_clusters") return "warn";
+  if (status === "running" || status === "queued" || status === "cancel_requested" || status === "syncing" || status === "processing_clusters") return "warn";
+  if (status === "canceled") return "neutral";
   return "neutral";
 }
 
@@ -25,7 +26,11 @@ function isEventProcessingActive(eventData: EventResponse): boolean {
   if (eventData.status === "syncing" || eventData.status === "processing_clusters") {
     return true;
   }
-  return eventData.jobs.some((job) => job.status === "queued" || job.status === "running");
+  return eventData.jobs.some((job) => job.status === "queued" || job.status === "running" || job.status === "cancel_requested");
+}
+
+function canCancelJob(status: string): boolean {
+  return status === "queued" || status === "running";
 }
 
 export default function EventDashboardPage() {
@@ -35,6 +40,7 @@ export default function EventDashboardPage() {
   const [eventData, setEventData] = useState<EventResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [resyncing, setResyncing] = useState(false);
+  const [cancelingJobId, setCancelingJobId] = useState("");
   const [error, setError] = useState("");
   const processingActive = eventData ? isEventProcessingActive(eventData) : false;
 
@@ -80,6 +86,20 @@ export default function EventDashboardPage() {
       setError(err instanceof Error ? err.message : "Failed to queue resync");
     } finally {
       setResyncing(false);
+    }
+  }
+
+  async function triggerCancelJob(jobId: string) {
+    if (!adminToken.trim()) return;
+    setCancelingJobId(jobId);
+    setError("");
+    try {
+      await cancelJob(jobId, adminToken.trim());
+      await loadEvent();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cancel job");
+    } finally {
+      setCancelingJobId("");
     }
   }
 
@@ -164,7 +184,19 @@ export default function EventDashboardPage() {
                       <p className="font-medium">
                         {job.type} <span className="font-mono text-xs text-muted">{job.job_id}</span>
                       </p>
-                      <StatusPill label={job.status} tone={toneForStatus(job.status)} />
+                      <div className="flex items-center gap-2">
+                        <StatusPill label={job.status} tone={toneForStatus(job.status)} />
+                        {canCancelJob(job.status) ? (
+                          <button
+                            className="btn btn-secondary !px-2 !py-1 text-xs"
+                            type="button"
+                            onClick={() => triggerCancelJob(job.job_id)}
+                            disabled={cancelingJobId === job.job_id}
+                          >
+                            {cancelingJobId === job.job_id ? "Canceling..." : "Cancel"}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                     <p className="mt-1 text-sm text-muted">{job.stage}</p>
                     <div className="mt-2 h-2 w-full rounded-full bg-bg">

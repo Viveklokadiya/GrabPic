@@ -30,6 +30,12 @@ from app.schemas import (
     JobResponse,
 )
 from app.services.jobs import JOB_MATCH_GUEST, JOB_SYNC_EVENT, create_job
+from app.services.jobs import (
+    JOB_CLUSTER_EVENT,
+    JOB_STATUS_CANCELED,
+    JOB_STATUS_CANCEL_REQUESTED,
+    request_job_cancel,
+)
 from app.services.storage import save_selfie
 from app.utils.drive import extract_drive_folder_id
 
@@ -155,6 +161,32 @@ def get_job(
         if not event:
             raise APIException("event_not_found", "Event not found for this job", status.HTTP_404_NOT_FOUND)
         _require_event_admin(event=event, authorization=authorization)
+    return _job_response(job)
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
+def cancel_job(
+    job_id: str,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> JobResponse:
+    job = db.get(Job, job_id)
+    if not job:
+        raise APIException("job_not_found", "Job not found", status.HTTP_404_NOT_FOUND)
+
+    if job.event_id:
+        event = db.get(Event, job.event_id)
+        if not event:
+            raise APIException("event_not_found", "Event not found for this job", status.HTTP_404_NOT_FOUND)
+        if not _is_system_admin(authorization=authorization, settings=settings):
+            _require_event_admin(event=event, authorization=authorization)
+    else:
+        _require_system_admin(authorization=authorization, settings=settings)
+
+    request_job_cancel(db, job, reason="Canceled by admin")
+    _apply_cancellation_side_effects(db=db, job=job)
+    db.commit()
     return _job_response(job)
 
 
@@ -444,6 +476,42 @@ def _require_system_admin(*, authorization: str | None, settings: Settings) -> N
         raise APIException("admin_key_required", "Admin dashboard key required", status.HTTP_401_UNAUTHORIZED)
     if not hmac.compare_digest(token, expected):
         raise APIException("invalid_admin_key", "Invalid admin dashboard key", status.HTTP_403_FORBIDDEN)
+
+
+def _is_system_admin(*, authorization: str | None, settings: Settings) -> bool:
+    expected = str(settings.admin_dashboard_key or "").strip()
+    if not expected:
+        return False
+    token = extract_bearer_token(authorization)
+    if not token:
+        return False
+    return hmac.compare_digest(token, expected)
+
+
+def _apply_cancellation_side_effects(*, db: Session, job: Job) -> None:
+    if job.status not in {JOB_STATUS_CANCELED, JOB_STATUS_CANCEL_REQUESTED}:
+        return
+
+    if job.event_id and job.job_type in {JOB_SYNC_EVENT, JOB_CLUSTER_EVENT}:
+        event = db.get(Event, job.event_id)
+        if event:
+            if job.status == JOB_STATUS_CANCELED:
+                event.status = "failed"
+            else:
+                event.status = "syncing"
+            db.add(event)
+
+    if job.query_id and job.job_type == JOB_MATCH_GUEST:
+        query = db.get(GuestQuery, job.query_id)
+        if query:
+            if job.status == JOB_STATUS_CANCELED:
+                query.status = "failed"
+                query.error_text = "Canceled by admin"
+                query.message = "Matching was canceled by admin."
+            else:
+                query.status = "running"
+                query.message = "Cancel requested by admin..."
+            db.add(query)
 
 
 def _job_response(job: Job) -> JobResponse:
