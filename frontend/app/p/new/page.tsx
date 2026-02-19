@@ -79,9 +79,6 @@ export default function NewEventPage() {
             <p>
               <strong>Slug:</strong> {created.slug}
             </p>
-            <p>
-              <strong>Guest Code:</strong> <code>{created.guest_code}</code>
-            </p>
             <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
               <strong>Admin Token (shown once):</strong> <code className="break-all">{created.admin_token}</code>
             </p>
@@ -97,6 +94,7 @@ export default function NewEventPage() {
                 Guest link is generated after image processing completes. Open event dashboard for live progress.
               </p>
             )}
+            <p className="text-xs text-muted">Guest code is not required. Anyone with guest URL can join this event.</p>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <button

@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.config import Settings, get_settings, reload_settings
 from app.db import Base, get_db
+from app.local_auth import reset_local_auth_state
 from app.main import create_app
 
 
@@ -23,7 +24,15 @@ def test_settings(tmp_path: Path) -> Settings:
     os.environ["GOOGLE_DRIVE_API_KEY"] = "test-key"
     os.environ["PUBLIC_FRONTEND_URL"] = "http://localhost:3000"
     os.environ["ADMIN_DASHBOARD_KEY"] = ""
+    os.environ["APP_ENV"] = "local"
     return reload_settings()
+
+
+@pytest.fixture(autouse=True)
+def reset_local_auth() -> Generator[None, None, None]:
+    reset_local_auth_state()
+    yield
+    reset_local_auth_state()
 
 
 @pytest.fixture()

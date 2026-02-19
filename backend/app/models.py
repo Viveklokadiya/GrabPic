@@ -22,6 +22,7 @@ class Event(Base):
     slug: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
     drive_link: Mapped[str] = mapped_column(Text, nullable=False)
     drive_folder_id: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    owner_user_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     guest_code_hash: Mapped[str] = mapped_column(String(300), nullable=False)
     admin_token_hash: Mapped[str] = mapped_column(String(300), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="queued")
@@ -32,6 +33,7 @@ class Event(Base):
     photos: Mapped[list["Photo"]] = relationship(back_populates="event", cascade="all, delete-orphan")
     clusters: Mapped[list["FaceCluster"]] = relationship(back_populates="event", cascade="all, delete-orphan")
     guest_queries: Mapped[list["GuestQuery"]] = relationship(back_populates="event", cascade="all, delete-orphan")
+    memberships: Mapped[list["EventMembership"]] = relationship(back_populates="event", cascade="all, delete-orphan")
 
 
 class Job(Base):
@@ -123,6 +125,7 @@ class GuestQuery(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     event_id: Mapped[str] = mapped_column(String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True)
+    guest_user_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="queued", index=True)
     selfie_path: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -152,3 +155,15 @@ class GuestResult(Base):
 
     query: Mapped["GuestQuery"] = relationship(back_populates="results")
     photo: Mapped["Photo"] = relationship(back_populates="guest_results")
+
+
+class EventMembership(Base):
+    __tablename__ = "event_memberships"
+    __table_args__ = (UniqueConstraint("event_id", "user_id", name="uq_event_membership"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    event_id: Mapped[str] = mapped_column(String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    event: Mapped["Event"] = relationship(back_populates="memberships")

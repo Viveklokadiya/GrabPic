@@ -2,347 +2,141 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import Card from "@/components/card";
-import StatusPill from "@/components/status-pill";
-import { AdminEventOverview, AdminEventsResponse, cancelJob, getAdminEvents, JobResponse } from "@/lib/api";
+import type { AdminEventStatusItem, AdminJobRow, GlobalStatsResponse } from "@/lib/api";
+import { cancelAdminEvent, getAdminEventsStatus, getAdminJobs, getAdminMetrics } from "@/lib/rbac-api";
 
-const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
-const backendBase = apiBase.replace(/\/api\/v1$/, "");
-const ADMIN_KEY_STORAGE = "grabpic_admin_dashboard_key";
-
-function statusTone(status: string): "neutral" | "success" | "warn" | "danger" {
-  if (status === "completed" || status === "ready") return "success";
-  if (status === "failed") return "danger";
-  if (status === "queued" || status === "running" || status === "cancel_requested" || status === "syncing" || status === "processing_clusters") {
-    return "warn";
-  }
-  if (status === "canceled") return "neutral";
-  return "neutral";
-}
-
-function formatAt(value: string | null | undefined): string {
-  if (!value) return "-";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return value;
-  return dt.toLocaleString();
-}
-
-function num(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function hasActiveProcessing(events: AdminEventOverview[]): boolean {
-  return events.some((event) => {
-    if (event.status === "syncing" || event.status === "processing_clusters") {
-      return true;
-    }
-    return event.latest_jobs.some((job) => job.status === "queued" || job.status === "running" || job.status === "cancel_requested");
-  });
-}
-
-function canCancelJob(status: string): boolean {
-  return status === "queued" || status === "running";
-}
-
-function JobSummary({
-  job,
-  onCancel,
-  canceling,
-}: {
-  job: JobResponse;
-  onCancel: (jobId: string) => void;
-  canceling: boolean;
-}) {
+function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-md border border-line bg-white p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-medium">
-          {job.type} <span className="font-mono text-xs text-muted">{job.job_id}</span>
-        </p>
-        <div className="flex items-center gap-2">
-          <StatusPill label={job.status} tone={statusTone(job.status)} />
-          {canCancelJob(job.status) ? (
-            <button
-              className="btn btn-secondary !px-2 !py-1 text-xs"
-              type="button"
-              onClick={() => onCancel(job.job_id)}
-              disabled={canceling}
-            >
-              {canceling ? "Canceling..." : "Cancel"}
-            </button>
-          ) : null}
-        </div>
-      </div>
-      <p className="mt-1 text-sm text-muted">{job.stage || "-"}</p>
-      <div className="mt-2 h-2 w-full rounded-full bg-bg">
-        <div className="h-2 rounded-full bg-accent transition-all duration-300" style={{ width: `${num(job.progress_percent)}%` }} />
-      </div>
-      {job.type === "sync_event" ? (
-        <>
-          <p className="mt-2 text-xs text-muted">
-            Listed {num(job.payload?.total_listed)} | Completed {num(job.payload?.completed)} | Processed {num(job.payload?.processed)} |
-            Faces {num(job.payload?.matched_faces)} | Errors {num(job.payload?.failures)}
-          </p>
-          {typeof job.payload?.current_file_name === "string" && job.payload.current_file_name ? (
-            <p className="mt-1 text-xs text-muted">Current file: {job.payload.current_file_name}</p>
-          ) : null}
-        </>
-      ) : null}
-      {job.type === "match_guest" ? (
-        <p className="mt-2 text-xs text-muted">
-          Match confidence: {num(job.payload?.confidence) > 0 ? `${(num(job.payload?.confidence) * 100).toFixed(1)}%` : "pending"} | Photos:{" "}
-          {num(job.payload?.photos)}
-        </p>
-      ) : null}
-      {job.error ? <p className="mt-2 text-xs text-red-700">{job.error}</p> : null}
-    </div>
+    <article className="rounded-xl border border-line bg-white p-4">
+      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
+    </article>
   );
 }
 
-function EventCard({
-  event,
-  onCancelJob,
-  cancelingJobId,
-}: {
-  event: AdminEventOverview;
-  onCancelJob: (jobId: string) => void;
-  cancelingJobId: string;
-}) {
-  return (
-    <Card>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-[var(--font-heading)] text-xl font-semibold tracking-tight">{event.name}</h2>
-          <p className="mt-1 text-xs text-muted">
-            <span className="font-mono">{event.event_id}</span> | slug: <code>{event.slug}</code>
-          </p>
-        </div>
-        <StatusPill label={event.status} tone={statusTone(event.status)} />
-      </div>
-
-      <div className="mt-4 grid gap-2 text-sm">
-        <p>
-          <strong>Drive Folder:</strong> <code>{event.drive_folder_id}</code>
-        </p>
-        <p className="truncate">
-          <strong>Drive Link:</strong>{" "}
-          <a href={event.drive_link} className="underline" target="_blank" rel="noreferrer">
-            {event.drive_link}
-          </a>
-        </p>
-        <p>
-          <strong>Created:</strong> {formatAt(event.created_at)} <strong className="ml-2">Updated:</strong> {formatAt(event.updated_at)}
-        </p>
-        {event.guest_ready ? (
-          <p>
-            <strong>Guest Link:</strong>{" "}
-            <a href={event.guest_url} className="underline" target="_blank" rel="noreferrer">
-              {event.guest_url}
-            </a>
-          </p>
-        ) : (
-          <p className="text-muted">Guest link will appear after processing is complete.</p>
-        )}
-      </div>
-
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-md border border-line bg-bg p-3 text-sm">Photos: {event.counters.photos}</div>
-        <div className="rounded-md border border-line bg-bg p-3 text-sm">Faces: {event.counters.faces}</div>
-        <div className="rounded-md border border-line bg-bg p-3 text-sm">Jobs: {event.counters.jobs}</div>
-        <div className="rounded-md border border-line bg-bg p-3 text-sm">Running: {event.counters.running_jobs}</div>
-        <div className="rounded-md border border-line bg-bg p-3 text-sm">Failed Jobs: {event.counters.failed_jobs}</div>
-        <div className="rounded-md border border-line bg-bg p-3 text-sm">Guest Queries: {event.counters.guest_queries}</div>
-        <div className="rounded-md border border-line bg-bg p-3 text-sm">Completed Queries: {event.counters.completed_queries}</div>
-        <div className="rounded-md border border-line bg-bg p-3 text-sm">Matched Photos: {event.counters.matched_photos}</div>
-      </div>
-
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <section>
-          <h3 className="font-[var(--font-heading)] text-base font-semibold">Latest Jobs</h3>
-          <div className="mt-2 grid gap-2">
-            {event.latest_jobs.length ? (
-              event.latest_jobs.map((job) => (
-                <JobSummary
-                  key={job.job_id}
-                  job={job}
-                  onCancel={onCancelJob}
-                  canceling={cancelingJobId === job.job_id}
-                />
-              ))
-            ) : (
-              <p className="text-sm text-muted">No jobs yet.</p>
-            )}
-          </div>
-        </section>
-
-        <section>
-          <h3 className="font-[var(--font-heading)] text-base font-semibold">Latest Guest Matches</h3>
-          <div className="mt-2 grid gap-2">
-            {event.latest_queries.length ? (
-              event.latest_queries.map((query) => (
-                <div key={query.query_id} className="rounded-md border border-line bg-white p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-mono text-xs">{query.query_id}</p>
-                    <StatusPill label={query.status} tone={statusTone(query.status)} />
-                  </div>
-                  <p className="mt-1 text-sm text-muted">
-                    Confidence: {(query.confidence * 100).toFixed(1)}% | Matches: {query.match_count}
-                  </p>
-                  <p className="mt-1 text-xs text-muted">
-                    Created {formatAt(query.created_at)} | Completed {formatAt(query.completed_at)}
-                  </p>
-                  {query.message ? <p className="mt-2 text-xs text-muted">{query.message}</p> : null}
-                  {query.links.length ? (
-                    <div className="mt-3 grid gap-2">
-                      {query.links.map((link) => (
-                        <div key={link.photo_id} className="rounded-md border border-line bg-bg p-2">
-                          <p className="line-clamp-1 text-xs font-medium">{link.file_name}</p>
-                          <p className="mt-1 text-xs text-muted">Score {(link.score * 100).toFixed(1)}%</p>
-                          <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                            <a href={link.web_view_link} className="btn btn-secondary !px-2 !py-1" target="_blank" rel="noreferrer">
-                              Open
-                            </a>
-                            <a href={link.download_url} className="btn btn-secondary !px-2 !py-1" target="_blank" rel="noreferrer">
-                              Download
-                            </a>
-                            <a
-                              href={link.thumbnail_url.startsWith("http") ? link.thumbnail_url : `${backendBase}${link.thumbnail_url}`}
-                              className="btn btn-secondary !px-2 !py-1"
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Thumb
-                            </a>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted">No guest matches yet.</p>
-            )}
-          </div>
-        </section>
-      </div>
-    </Card>
-  );
+function canCancel(status: string): boolean {
+  return status === "QUEUED" || status === "RUNNING";
 }
 
-export default function AdminPage() {
-  const [adminKey, setAdminKey] = useState("");
-  const [limit, setLimit] = useState(60);
-  const [loading, setLoading] = useState(false);
+export default function AdminDashboardPage() {
+  const [stats, setStats] = useState<GlobalStatsResponse | null>(null);
+  const [events, setEvents] = useState<AdminEventStatusItem[]>([]);
+  const [jobs, setJobs] = useState<AdminJobRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [cancelingJobId, setCancelingJobId] = useState("");
-  const [data, setData] = useState<AdminEventsResponse | null>(null);
-  const [lastLoadedAt, setLastLoadedAt] = useState<string>("");
+  const [cancelingEventId, setCancelingEventId] = useState("");
+
+  const hasActiveProcessing = useMemo(() => events.some((item) => item.status === "QUEUED" || item.status === "RUNNING"), [events]);
+  const runningJobs = useMemo(
+    () => jobs.filter((job) => job.status === "queued" || job.status === "running" || job.status === "cancel_requested").length,
+    [jobs]
+  );
+  const completedToday = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return jobs.filter((job) => job.status === "completed" && new Date(job.updated_at).getTime() >= start).length;
+  }, [jobs]);
+
+  async function loadAll(silent = false) {
+    if (!silent) setLoading(true);
+    setError("");
+    try {
+      const [metrics, eventRows, jobRows] = await Promise.all([getAdminMetrics(), getAdminEventsStatus(), getAdminJobs(300)]);
+      setStats(metrics);
+      setEvents(eventRows);
+      setJobs(jobRows);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load admin dashboard");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(ADMIN_KEY_STORAGE) || "";
-    if (saved) {
-      setAdminKey(saved);
-    }
+    void loadAll(false);
   }, []);
 
-  async function loadOverview() {
-    const key = adminKey.trim();
-    if (!key) return;
-    setLoading(true);
-    setError("");
-    try {
-      const response = await getAdminEvents(key, limit);
-      setData(response);
-      setLastLoadedAt(new Date().toISOString());
-      if (typeof window !== "undefined") {
-        localStorage.setItem(ADMIN_KEY_STORAGE, key);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load admin dashboard");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleCancelJob(jobId: string) {
-    const key = adminKey.trim();
-    if (!key) return;
-    setCancelingJobId(jobId);
-    setError("");
-    try {
-      await cancelJob(jobId, key);
-      await loadOverview();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not cancel job");
-    } finally {
-      setCancelingJobId("");
-    }
-  }
-
   useEffect(() => {
-    if (!data || !adminKey.trim()) return;
-    if (!hasActiveProcessing(data.events || [])) return;
-    const timer = setInterval(() => {
-      void loadOverview();
-    }, 1500);
-    return () => clearInterval(timer);
-  }, [data, adminKey, limit]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!hasActiveProcessing) return;
+    const timer = window.setInterval(() => {
+      void loadAll(true);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveProcessing]);
 
-  const eventCount = useMemo(() => data?.events.length || 0, [data]);
+  async function onCancelEvent(eventId: string) {
+    setCancelingEventId(eventId);
+    setError("");
+    setEvents((prev) => prev.map((item) => (item.event_id === eventId ? { ...item, status: "CANCELLED" } : item)));
+    try {
+      await cancelAdminEvent(eventId);
+      await loadAll(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cancel event job");
+    } finally {
+      setCancelingEventId("");
+    }
+  }
+
+  if (loading) return <p className="text-sm text-muted">Loading admin dashboard...</p>;
 
   return (
-    <main className="grid gap-5">
-      <Card title="System Admin Dashboard">
-        <p className="text-sm text-muted">View all events, sync/match processing progress, guest links, and matched photo links in one place.</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_120px_auto]">
-          <label className="text-sm">
-            ADMIN_DASHBOARD_KEY
-            <input
-              className="field mt-1 font-mono text-xs"
-              value={adminKey}
-              onChange={(e) => setAdminKey(e.target.value)}
-              placeholder="Paste backend admin dashboard key"
-              type="password"
-            />
-          </label>
-          <label className="text-sm">
-            Limit
-            <input
-              className="field mt-1"
-              value={limit}
-              min={1}
-              max={200}
-              onChange={(e) => setLimit(Math.min(200, Math.max(1, Number(e.target.value || "1"))))}
-              type="number"
-            />
-          </label>
-          <div className="flex items-end">
-            <button className="btn btn-primary w-full md:w-auto" onClick={loadOverview} disabled={loading || !adminKey.trim()} type="button">
-              {loading ? "Loading..." : "Load Dashboard"}
-            </button>
-          </div>
-        </div>
-        {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
-        {data ? (
-          <p className="mt-3 text-sm text-muted">
-            Showing {eventCount} of {data.total_events} events. Last refreshed: {formatAt(lastLoadedAt)}
-          </p>
-        ) : null}
-      </Card>
+    <main className="grid gap-4">
+      {error ? <p className="text-sm text-red-700">{error}</p> : null}
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Total events" value={stats?.events || 0} />
+        <StatCard label="Total users" value={stats?.users || 0} />
+        <StatCard label="Running jobs" value={runningJobs} />
+        <StatCard label="Completed today" value={completedToday} />
+      </section>
 
-      {data?.events?.length
-        ? data.events.map((event) => (
-            <EventCard key={event.event_id} event={event} onCancelJob={handleCancelJob} cancelingJobId={cancelingJobId} />
-          ))
-        : null}
-      {data && !data.events.length ? (
-        <Card>
-          <p className="text-sm text-muted">No events found.</p>
-        </Card>
-      ) : null}
+      <section className="rounded-xl border border-line bg-white p-4">
+        <h2 className="font-display text-xl font-semibold text-slate-900">Events Processing Overview</h2>
+        <p className="mt-1 text-xs text-muted">
+          Polling every 2s while any event is queued/running. Admin can cancel active processing jobs.
+        </p>
+        <div className="mt-3 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="text-xs uppercase text-muted">
+              <tr>
+                <th className="py-2 pr-3">Event Name</th>
+                <th className="py-2 pr-3">Owner</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="py-2 pr-3">Processed / Total</th>
+                <th className="py-2 pr-3">Progress %</th>
+                <th className="py-2 pr-3">Last Updated</th>
+                <th className="py-2">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map((event) => (
+                <tr key={event.event_id} className="border-t border-line">
+                  <td className="py-2 pr-3">{event.event_name}</td>
+                  <td className="py-2 pr-3">{event.owner_email}</td>
+                  <td className="py-2 pr-3">{event.status}</td>
+                  <td className="py-2 pr-3">
+                    {event.processed_photos} / {event.total_photos}
+                    {event.failed_photos > 0 ? ` (failed ${event.failed_photos})` : ""}
+                  </td>
+                  <td className="py-2 pr-3">{event.progress_percentage.toFixed(1)}%</td>
+                  <td className="py-2 pr-3">{new Date(event.last_updated).toLocaleString()}</td>
+                  <td className="py-2">
+                    <button
+                      className="btn btn-secondary text-xs"
+                      type="button"
+                      disabled={!canCancel(event.status) || cancelingEventId === event.event_id}
+                      onClick={() => void onCancelEvent(event.event_id)}
+                    >
+                      {cancelingEventId === event.event_id ? "Canceling..." : "Cancel"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!events.length ? <p className="text-sm text-muted">No events found.</p> : null}
+        </div>
+      </section>
     </main>
   );
 }

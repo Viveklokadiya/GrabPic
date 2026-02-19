@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     app_name: str = Field(default="GrabPic API")
     environment: str = Field(default="development")
+    app_env: str = Field(default="local", validation_alias=AliasChoices("APP_ENV"))
     api_prefix: str = Field(default="/api/v1")
     database_url: str = Field(default="postgresql+psycopg://grabpic:grabpic@localhost:5432/grabpic")
     google_drive_api_key: str = Field(

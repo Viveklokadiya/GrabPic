@@ -104,12 +104,9 @@ export default function EventDashboardPage() {
   }
 
   const savedSecrets = loadEventSecrets(eventId);
-  const guestCode = savedSecrets?.guestCode || "";
   const slug = eventData?.slug || savedSecrets?.slug || "";
-  const guestPath =
-    eventData?.guest_ready && slug
-      ? `/g/${slug}${guestCode ? `?code=${encodeURIComponent(guestCode)}` : ""}`
-      : "";
+  const guestJoinPath = slug ? `/guest/join?slug=${encodeURIComponent(slug)}` : "";
+  const guestPath = slug ? `/g/${slug}` : "";
 
   return (
     <main className="grid gap-5">
@@ -157,21 +154,23 @@ export default function EventDashboardPage() {
                 <strong>Status:</strong>{" "}
                 <StatusPill label={eventData.status} tone={toneForStatus(eventData.status)} />
               </p>
-              {guestCode ? (
+              {guestJoinPath ? (
                 <p>
-                  <strong>Guest Code:</strong> <code>{guestCode}</code>
+                  <strong>Guest Join URL:</strong>{" "}
+                  <a href={guestJoinPath} target="_blank" rel="noreferrer" className="underline">
+                    {guestJoinPath}
+                  </a>
                 </p>
               ) : null}
-              {eventData.guest_ready && guestPath ? (
+              {guestPath ? (
                 <p>
-                  <strong>Guest Link:</strong>{" "}
+                  <strong>Public Selfie URL:</strong>{" "}
                   <a href={guestPath} target="_blank" rel="noreferrer" className="underline">
                     {guestPath}
                   </a>
                 </p>
-              ) : (
-                <p className="text-muted">Guest link will be enabled after all images are processed.</p>
-              )}
+              ) : null}
+              <p className="text-xs text-muted">Guest Join URL auto-joins signed-in guest users directly to this event.</p>
             </div>
           </Card>
 

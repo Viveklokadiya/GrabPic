@@ -494,7 +494,7 @@ def _is_cancel_requested(db: Session, job_id: str) -> bool:
 
 
 def _cancel_sync_or_cluster_job(db: Session, job: Job, event: Event) -> None:
-    event.status = "failed"
+    event.status = "canceled"
     db.add(event)
     upsert_job_payload(job, {"phase": "canceled"})
     mark_job_canceled(db, job, reason="Canceled by admin")

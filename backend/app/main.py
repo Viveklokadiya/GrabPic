@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.auth_routes import router as auth_router
 from app.api.routes import router
 from app.config import get_settings
 from app.errors import APIException, error_response
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(auth_router)
     app.include_router(router, prefix=settings.api_prefix)
     app.mount("/storage", StaticFiles(directory=str(settings.storage_root_path), check_dir=True), name="storage")
 

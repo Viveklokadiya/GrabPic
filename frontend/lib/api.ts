@@ -20,6 +20,12 @@ export type EventCreateResponse = {
   initial_job_id: string;
 };
 
+export type EventUpdateRequest = {
+  name?: string;
+  drive_link?: string;
+  slug?: string;
+};
+
 export type EventResponse = {
   event_id: string;
   name: string;
@@ -34,10 +40,27 @@ export type EventResponse = {
   jobs: JobResponse[];
 };
 
+export type EventProcessingStatusResponse = {
+  event_id: string;
+  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED" | string;
+  total_photos: number;
+  processed_photos: number;
+  failed_photos: number;
+  progress_percentage: number;
+  job_id: string | null;
+  updated_at: string;
+};
+
 export type GuestResolveResponse = {
   event_id: string;
   slug: string;
   status: string;
+};
+
+export type EventMembershipResponse = {
+  event_id: string;
+  user_id: string;
+  joined_at: string;
 };
 
 export type GuestPhoto = {
@@ -57,6 +80,13 @@ export type GuestMatchResponse = {
   confidence: number;
   photos: GuestPhoto[];
   message: string;
+};
+
+export type UserSummaryResponse = {
+  user_id: string;
+  email: string;
+  role: Role;
+  created_at: string;
 };
 
 export type AdminPhotoLink = {
@@ -111,7 +141,17 @@ export type AdminEventsResponse = {
   events: AdminEventOverview[];
 };
 
+export type Role = "SUPER_ADMIN" | "PHOTOGRAPHER" | "GUEST";
+
+export type AuthLoginResponse = {
+  user_id: string;
+  email: string;
+  role: Role;
+  access_token: string;
+};
+
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
+const AUTH_BASE = API_BASE.replace(/\/api\/v1$/, "");
 
 type ErrorPayload = { error?: { message?: string } };
 
@@ -169,22 +209,27 @@ export async function cancelJob(jobId: string, token: string): Promise<JobRespon
 }
 
 export async function resolveGuestEvent(slug: string, guestCode: string): Promise<GuestResolveResponse> {
+  const payload: { slug: string; guest_code?: string } = { slug };
+  const trimmed = String(guestCode || "").trim();
+  if (trimmed) payload.guest_code = trimmed;
   const response = await fetch(`${API_BASE}/guest/events/resolve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ slug, guest_code: guestCode })
+    body: JSON.stringify(payload)
   });
   return parseResponse<GuestResolveResponse>(response);
 }
 
 export async function createGuestMatch(input: {
   slug: string;
-  guestCode: string;
+  guestCode?: string;
   selfieFile: File;
 }): Promise<GuestMatchResponse> {
   const form = new FormData();
   form.set("slug", input.slug);
-  form.set("guest_code", input.guestCode);
+  if (input.guestCode?.trim()) {
+    form.set("guest_code", input.guestCode.trim());
+  }
   form.set("selfie", input.selfieFile);
   const response = await fetch(`${API_BASE}/guest/matches`, {
     method: "POST",
@@ -207,3 +252,109 @@ export async function getAdminEvents(adminKey: string, limit = 60): Promise<Admi
   });
   return parseResponse<AdminEventsResponse>(response);
 }
+
+export async function loginLocal(input: { email: string; password: string }): Promise<AuthLoginResponse> {
+  const response = await fetch(`${AUTH_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  return parseResponse<AuthLoginResponse>(response);
+}
+
+export type GlobalStatsResponse = {
+  users: number;
+  events: number;
+  photos: number;
+  jobs: number;
+  memberships: number;
+};
+
+export type AdminJobRow = {
+  job_id: string;
+  event_id: string | null;
+  query_id: string | null;
+  type: string;
+  status: string;
+  stage: string;
+  attempts: number;
+  error: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminEventStatusItem = {
+  event_id: string;
+  event_name: string;
+  owner_email: string;
+  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED" | string;
+  processed_photos: number;
+  total_photos: number;
+  failed_photos: number;
+  progress_percentage: number;
+  last_updated: string;
+  job_id: string | null;
+};
+
+export type PhotographerEventListItem = {
+  event_id: string;
+  name: string;
+  slug: string;
+  status: string;
+  owner_user_id: string | null;
+  photo_count: number;
+  guest_count: number;
+  last_sync_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EventGuestInfo = {
+  user_id: string;
+  email: string;
+  joined_at: string;
+};
+
+export type EventGuestsResponse = {
+  event_id: string;
+  guests: EventGuestInfo[];
+};
+
+export type EventPhotoSafeResponse = {
+  photo_id: string;
+  file_name: string;
+  thumbnail_url: string;
+  web_view_link: string;
+  download_url: string;
+};
+
+export type GuestEventListItem = {
+  event_id: string;
+  name: string;
+  slug: string;
+  status: string;
+  joined_at: string;
+};
+
+export type GuestEventSummary = {
+  event_id: string;
+  name: string;
+  slug: string;
+  status: string;
+  joined: boolean;
+  joined_at: string | null;
+};
+
+export type GuestMyPhotoItem = {
+  photo_id: string;
+  thumbnail_url: string;
+  download_url: string;
+};
+
+export type GuestMyPhotosResponse = {
+  event_id: string;
+  query_id: string | null;
+  status: string;
+  photos: GuestMyPhotoItem[];
+  message: string;
+};

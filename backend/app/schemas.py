@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.roles import Role
+
 
 class APIError(BaseModel):
     code: str
@@ -17,6 +19,13 @@ class ErrorEnvelope(BaseModel):
 class EventCreateRequest(BaseModel):
     name: str = Field(min_length=2, max_length=160)
     drive_link: str = Field(min_length=10, max_length=1200)
+    slug: str | None = Field(default=None, max_length=120)
+    owner_user_id: str | None = Field(default=None, max_length=80)
+
+
+class EventUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    drive_link: str | None = Field(default=None, min_length=10, max_length=1200)
     slug: str | None = Field(default=None, max_length=120)
 
 
@@ -48,6 +57,7 @@ class EventResponse(BaseModel):
     slug: str
     drive_link: str
     drive_folder_id: str
+    owner_user_id: str | None
     status: str
     guest_ready: bool
     guest_url: str
@@ -56,9 +66,24 @@ class EventResponse(BaseModel):
     jobs: list[JobResponse]
 
 
+class EventProcessingStatusResponse(BaseModel):
+    event_id: str
+    status: str
+    total_photos: int
+    processed_photos: int
+    failed_photos: int
+    progress_percentage: float
+    job_id: str | None
+    updated_at: datetime
+
+
 class GuestResolveRequest(BaseModel):
     slug: str = Field(min_length=2, max_length=120)
-    guest_code: str = Field(min_length=4, max_length=20)
+    guest_code: str | None = Field(default=None, min_length=4, max_length=20)
+
+
+class GuestJoinLinkRequest(BaseModel):
+    slug: str = Field(min_length=2, max_length=120)
 
 
 class GuestResolveResponse(BaseModel):
@@ -84,6 +109,132 @@ class GuestMatchResponse(BaseModel):
     confidence: float
     photos: list[GuestPhotoResponse]
     message: str
+
+
+class AuthLoginRequest(BaseModel):
+    email: str = Field(min_length=4, max_length=240)
+    password: str = Field(min_length=4, max_length=120)
+
+
+class AuthLoginResponse(BaseModel):
+    user_id: str
+    email: str
+    role: Role
+    access_token: str
+
+
+class UserSummaryResponse(BaseModel):
+    user_id: str
+    email: str
+    role: Role
+    created_at: datetime
+
+
+class UpdateUserRoleRequest(BaseModel):
+    role: Role
+
+
+class GlobalStatsResponse(BaseModel):
+    users: int
+    events: int
+    photos: int
+    jobs: int
+    memberships: int
+
+
+class AdminJobRow(BaseModel):
+    job_id: str
+    event_id: str | None
+    query_id: str | None
+    type: str
+    status: str
+    stage: str
+    attempts: int
+    error: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminEventStatusItem(BaseModel):
+    event_id: str
+    event_name: str
+    owner_email: str
+    status: str
+    processed_photos: int
+    total_photos: int
+    failed_photos: int
+    progress_percentage: float
+    last_updated: datetime
+    job_id: str | None
+
+
+class PhotographerEventListItem(BaseModel):
+    event_id: str
+    name: str
+    slug: str
+    status: str
+    owner_user_id: str | None
+    photo_count: int
+    guest_count: int
+    last_sync_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class GuestEventListItem(BaseModel):
+    event_id: str
+    name: str
+    slug: str
+    status: str
+    joined_at: datetime
+
+
+class GuestEventSummary(BaseModel):
+    event_id: str
+    name: str
+    slug: str
+    status: str
+    joined: bool
+    joined_at: datetime | None
+
+
+class GuestMyPhotoItem(BaseModel):
+    photo_id: str
+    thumbnail_url: str
+    download_url: str
+
+
+class GuestMyPhotosResponse(BaseModel):
+    event_id: str
+    query_id: str | None
+    status: str
+    photos: list[GuestMyPhotoItem]
+    message: str
+
+
+class EventMembershipResponse(BaseModel):
+    event_id: str
+    user_id: str
+    joined_at: datetime
+
+
+class EventGuestInfo(BaseModel):
+    user_id: str
+    email: str
+    joined_at: datetime
+
+
+class EventGuestsResponse(BaseModel):
+    event_id: str
+    guests: list[EventGuestInfo]
+
+
+class EventPhotoSafeResponse(BaseModel):
+    photo_id: str
+    file_name: str
+    thumbnail_url: str
+    web_view_link: str
+    download_url: str
 
 
 class AdminPhotoLink(BaseModel):

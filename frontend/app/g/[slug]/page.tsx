@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import Card from "@/components/card";
 import { createGuestMatch, getGuestMatch, GuestMatchResponse, resolveGuestEvent } from "@/lib/api";
+import { getAuthSession } from "@/lib/auth-session";
 
 const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
 const backendBase = apiBase.replace(/\/api\/v1$/, "");
@@ -16,16 +17,26 @@ function toPercent(value: number): string {
 }
 
 export default function GuestUploadPage() {
+  const router = useRouter();
   const params = useParams<{ slug: string }>();
   const slug = useMemo(() => String(params?.slug || ""), [params]);
   const searchParams = useSearchParams();
-
-  const [guestCode, setGuestCode] = useState(searchParams.get("code") || "");
+  const [guestCode] = useState(searchParams.get("code") || "");
+  const [redirectingToGuestPortal, setRedirectingToGuestPortal] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [queryId, setQueryId] = useState("");
   const [match, setMatch] = useState<GuestMatchResponse | null>(null);
+
+  useEffect(() => {
+    if (!slug) return;
+    const session = getAuthSession();
+    if (!session) return;
+    if (session.role !== "GUEST" && session.role !== "SUPER_ADMIN") return;
+    setRedirectingToGuestPortal(true);
+    router.replace(`/guest/join?slug=${encodeURIComponent(slug)}`);
+  }, [router, slug]);
 
   useEffect(() => {
     if (!queryId) return;
@@ -63,7 +74,7 @@ export default function GuestUploadPage() {
       await resolveGuestEvent(slug, guestCode.trim().toUpperCase());
       const match = await createGuestMatch({
         slug,
-        guestCode: guestCode.trim().toUpperCase(),
+        guestCode: guestCode.trim().toUpperCase() || undefined,
         selfieFile: file
       });
       setQueryId(match.query_id);
@@ -75,22 +86,24 @@ export default function GuestUploadPage() {
     }
   }
 
+  if (redirectingToGuestPortal) {
+    return (
+      <main className="grid gap-5">
+        <Card title="Redirecting">
+          <p className="text-sm text-muted">Signed in guest detected. Redirecting you to your guest portal event page...</p>
+        </Card>
+      </main>
+    );
+  }
+
   return (
     <main className="grid gap-5">
       <Card title="Find Your Photos">
         <p className="mb-4 text-sm text-muted">
           Event: <strong>{slug}</strong>
         </p>
+        <p className="mb-4 text-xs text-muted">Open link and upload selfie. Guest code is no longer required.</p>
         <form className="grid gap-3" onSubmit={onSubmit}>
-          <label className="text-sm">
-            Guest Code
-            <input
-              className="field mt-1 uppercase"
-              value={guestCode}
-              onChange={(e) => setGuestCode(e.target.value.toUpperCase())}
-              required
-            />
-          </label>
           <label className="text-sm">
             Selfie
             <input

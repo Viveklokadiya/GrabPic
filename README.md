@@ -56,14 +56,54 @@ python run_worker.py
 
 Base path: `/api/v1`
 
+- `POST /auth/login` (no `/api/v1` prefix)
 - `POST /events`
+- `PATCH /events/{event_id}`
+- `DELETE /events/{event_id}`
+- `GET /events/{event_id}/photos`
+- `GET /events/{event_id}/guests`
 - `GET /events/{event_id}`
 - `POST /events/{event_id}/resync`
 - `GET /jobs/{job_id}`
+- `POST /jobs/{job_id}/cancel`
 - `POST /guest/events/resolve`
+- `POST /guest/events/{event_id}/join`
 - `POST /guest/matches`
 - `GET /guest/matches/{query_id}`
+- `GET /admin/users`
+- `PATCH /admin/users/{user_id}/role`
+- `GET /admin/stats`
 - `GET /health`
+
+## Local RBAC (Dev Mode)
+
+Local hardcoded auth is enabled only when:
+
+```env
+APP_ENV=local
+```
+
+### Login Example
+
+```bash
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"superadmin@grabpic.com","password":"password123"}'
+```
+
+### Local Users
+
+- `superadmin@grabpic.com` / `password123` -> `SUPER_ADMIN`
+- `studio1@grabpic.com` / `password123` -> `PHOTOGRAPHER`
+- `studio2@grabpic.com` / `password123` -> `PHOTOGRAPHER`
+- `guest1@grabpic.com` / `password123` -> `GUEST`
+- `guest2@grabpic.com` / `password123` -> `GUEST`
+
+### Permissions
+
+- `SUPER_ADMIN`: full access, list users, change roles, global stats, all events.
+- `PHOTOGRAPHER`: create/update/delete own events, run sync, view own event photos and guest list.
+- `GUEST`: join events, upload selfie, view only their own matched results.
 
 ## Testing
 
