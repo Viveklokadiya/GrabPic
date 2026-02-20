@@ -1,20 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import Card from "@/components/card";
+import GuestMatchStatusCard from "@/components/guest-match-status";
 import { createGuestMatch, getGuestMatch, GuestMatchResponse, resolveGuestEvent } from "@/lib/api";
 import { getAuthSession } from "@/lib/auth-session";
-
-const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
-const backendBase = apiBase.replace(/\/api\/v1$/, "");
-
-function toPercent(value: number): string {
-  const safe = Math.max(0, Math.min(1, Number(value || 0)));
-  return `${(safe * 100).toFixed(1)}%`;
-}
+import { hasResults, isPollingStatus } from "@/lib/guest-match-state";
 
 export default function GuestUploadPage() {
   const router = useRouter();
@@ -24,10 +17,14 @@ export default function GuestUploadPage() {
   const [guestCode] = useState(searchParams.get("code") || "");
   const [redirectingToGuestPortal, setRedirectingToGuestPortal] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [queryId, setQueryId] = useState("");
   const [match, setMatch] = useState<GuestMatchResponse | null>(null);
+  const pollingInFlightRef = useRef(false);
+
+  const polling = isPollingStatus(match?.status);
 
   useEffect(() => {
     if (!slug) return;
@@ -40,31 +37,36 @@ export default function GuestUploadPage() {
 
   useEffect(() => {
     if (!queryId) return;
+    if (!isPollingStatus(match?.status)) return;
     let canceled = false;
 
-    async function poll() {
+    async function tick() {
+      if (pollingInFlightRef.current) return;
+      pollingInFlightRef.current = true;
       try {
         const response = await getGuestMatch(queryId);
         if (canceled) return;
         setMatch(response);
-        if (response.status === "queued" || response.status === "running") {
-          setTimeout(poll, 1800);
-        }
       } catch (_err) {
-        if (canceled) return;
-        setTimeout(poll, 2800);
+        // keep state; retry on next tick
+      } finally {
+        pollingInFlightRef.current = false;
       }
     }
 
-    void poll();
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 2000);
     return () => {
       canceled = true;
+      window.clearInterval(timer);
     };
-  }, [queryId]);
+  }, [queryId, match?.status]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!file) {
+    if (!file || polling) {
       setError("Please upload a selfie.");
       return;
     }
@@ -72,13 +74,13 @@ export default function GuestUploadPage() {
     setLoading(true);
     try {
       await resolveGuestEvent(slug, guestCode.trim().toUpperCase());
-      const match = await createGuestMatch({
+      const nextMatch = await createGuestMatch({
         slug,
         guestCode: guestCode.trim().toUpperCase() || undefined,
         selfieFile: file
       });
-      setQueryId(match.query_id);
-      setMatch(match);
+      setQueryId(nextMatch.query_id);
+      setMatch(nextMatch);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not submit selfie");
     } finally {
@@ -107,6 +109,7 @@ export default function GuestUploadPage() {
           <label className="text-sm">
             Selfie
             <input
+              key={fileInputKey}
               className="field mt-1"
               type="file"
               accept="image/*"
@@ -114,7 +117,7 @@ export default function GuestUploadPage() {
               onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
           </label>
-          <button className="btn btn-primary mt-2" type="submit" disabled={loading}>
+          <button className="btn btn-primary mt-2" type="submit" disabled={loading || polling}>
             {loading ? "Uploading..." : "Match My Photos"}
           </button>
         </form>
@@ -122,59 +125,18 @@ export default function GuestUploadPage() {
       </Card>
 
       {match ? (
-        <Card title="Matching Progress">
-          <p className="text-sm text-muted">Query ID: {queryId}</p>
-          <p className="mt-2 text-sm">{match.message || "Processing..."}</p>
-          <div className="mt-3 h-2 w-full rounded-full bg-bg">
-            <div
-              className="h-2 rounded-full bg-accent transition-all duration-500"
-              style={{
-                width:
-                  match.status === "completed"
-                    ? "100%"
-                    : match.status === "running"
-                      ? "70%"
-                      : "35%"
-              }}
-            />
-          </div>
-          <p className="mt-2 text-xs text-muted">
-            Confidence: {toPercent(match.confidence)} | Status: {match.status}
-          </p>
-          <div className="mt-3">
-            <Link href={`/g/${slug}/result/${queryId}`} className="text-xs underline text-muted">
-              Open dedicated result page
-            </Link>
-          </div>
-        </Card>
-      ) : null}
-
-      {match?.status === "completed" && match.photos.length > 0 ? (
-        <Card title="Your Photos">
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {match.photos.map((photo) => (
-              <article key={photo.photo_id} className="overflow-hidden rounded-md border border-line bg-surface">
-                <img
-                  src={photo.thumbnail_url.startsWith("http") ? photo.thumbnail_url : `${backendBase}${photo.thumbnail_url}`}
-                  alt={photo.file_name}
-                  className="h-48 w-full object-cover"
-                />
-                <div className="grid gap-2 p-3 text-sm">
-                  <p className="line-clamp-2 font-medium">{photo.file_name}</p>
-                  <p className="text-muted">Score: {(photo.score * 100).toFixed(1)}%</p>
-                  <div className="flex gap-2">
-                    <a href={photo.web_view_link} target="_blank" rel="noreferrer" className="btn btn-secondary text-xs">
-                      Open in Drive
-                    </a>
-                    <a href={photo.download_url} target="_blank" rel="noreferrer" className="btn btn-secondary text-xs">
-                      Download
-                    </a>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </section>
-        </Card>
+        <GuestMatchStatusCard
+          match={match}
+          isPolling={polling}
+          openHref={hasResults(match) && queryId ? `/g/${slug}/result/${queryId}` : undefined}
+          openLabel="Open Photos"
+          onRetry={() => {
+            setMatch(null);
+            setQueryId("");
+            setFile(null);
+            setFileInputKey((value) => value + 1);
+          }}
+        />
       ) : null}
     </main>
   );

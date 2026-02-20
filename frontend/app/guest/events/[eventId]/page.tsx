@@ -1,18 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import GuestMatchStatusCard from "@/components/guest-match-status";
 import type { GuestEventSummary, GuestMatchResponse } from "@/lib/api";
+import { isPollingStatus } from "@/lib/guest-match-state";
 import { getGuestEvent, getGuestMatch, submitGuestSelfie } from "@/lib/rbac-api";
-
-function statusText(match: GuestMatchResponse | null): string {
-  if (!match) return "No selfie submitted yet.";
-  if (match.status === "queued" || match.status === "running") return match.message || "Processing selfie...";
-  if (match.status === "completed") return `Match complete. Confidence ${(match.confidence * 100).toFixed(1)}%.`;
-  return match.message || "No confident match yet.";
-}
 
 export default function GuestEventPage() {
   const params = useParams<{ eventId: string }>();
@@ -21,9 +15,13 @@ export default function GuestEventPage() {
   const [summary, setSummary] = useState<GuestEventSummary | null>(null);
   const [match, setMatch] = useState<GuestMatchResponse | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const pollingInFlightRef = useRef(false);
+
+  const polling = isPollingStatus(match?.status);
 
   async function loadEvent() {
     if (!eventId) return;
@@ -43,23 +41,39 @@ export default function GuestEventPage() {
   }, [eventId]);
 
   useEffect(() => {
-    if (!match?.query_id) return;
-    if (match.status !== "queued" && match.status !== "running") return;
+    const queryId = match?.query_id;
+    if (typeof queryId !== "string" || !queryId) return;
+    const pollQueryId: string = queryId;
+    if (!isPollingStatus(match?.status)) return;
+    let canceled = false;
 
-    const interval = window.setInterval(async () => {
+    async function tick() {
+      if (pollingInFlightRef.current) return;
+      pollingInFlightRef.current = true;
       try {
-        const next = await getGuestMatch(match.query_id);
+        const next = await getGuestMatch(pollQueryId);
+        if (canceled) return;
         setMatch(next);
       } catch {
         // keep last known state and retry on next tick
+      } finally {
+        pollingInFlightRef.current = false;
       }
-    }, 1800);
-    return () => window.clearInterval(interval);
+    }
+
+    void tick();
+    const interval = window.setInterval(() => {
+      void tick();
+    }, 2000);
+    return () => {
+      canceled = true;
+      window.clearInterval(interval);
+    };
   }, [match?.query_id, match?.status]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!eventId || !file) return;
+    if (!eventId || !file || polling) return;
     setUploading(true);
     setError("");
     try {
@@ -89,28 +103,30 @@ export default function GuestEventPage() {
         <p className="mt-2 text-sm text-muted">Upload a clear face selfie to generate your My Photos set.</p>
         <form className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]" onSubmit={onSubmit}>
           <input
+            key={fileInputKey}
             className="field"
             type="file"
             accept="image/*"
             onChange={(event) => setFile(event.target.files?.[0] || null)}
             required
           />
-          <button className="btn btn-primary" type="submit" disabled={uploading || !file}>
+          <button className="btn btn-primary" type="submit" disabled={uploading || !file || polling}>
             {uploading ? "Uploading..." : "Upload Selfie"}
           </button>
         </form>
       </section>
 
-      <section className="rounded-xl border border-line bg-white p-5">
-        <h2 className="font-display text-xl font-semibold text-slate-900">Match Status</h2>
-        <p className="mt-2 text-sm text-muted">{statusText(match)}</p>
-        {match?.query_id ? <p className="mt-1 text-xs text-muted">Query: {match.query_id}</p> : null}
-        <div className="mt-4 flex gap-2">
-          <Link className="btn btn-secondary text-xs" href={`/guest/my-photos/${eventId}`}>
-            Open My Photos
-          </Link>
-        </div>
-      </section>
+      <GuestMatchStatusCard
+        match={match}
+        isPolling={polling}
+        openHref={`/guest/my-photos/${eventId}`}
+        openLabel="Open My Photos"
+        onRetry={() => {
+          setMatch(null);
+          setFile(null);
+          setFileInputKey((value) => value + 1);
+        }}
+      />
     </main>
   );
 }
