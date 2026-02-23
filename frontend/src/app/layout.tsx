@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
+import Script from "next/script";
 
 import "./globals.css";
 
@@ -30,8 +31,39 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="scroll-smooth">
-      <body className={`${display.variable} ${body.variable} bg-app text-slate-900 antialiased`}>{children}</body>
+    <html lang="en" className="scroll-smooth" suppressHydrationWarning>
+      <body className={`${display.variable} ${body.variable} bg-app text-slate-900 antialiased`} suppressHydrationWarning>
+        <Script id="strip-extension-attrs" strategy="beforeInteractive">
+          {`(() => {
+  const attrs = [
+    "bis_skin_checked",
+    "bis_register",
+    "data-gr-ext-installed",
+    "data-new-gr-c-s-check-loaded",
+    "data-new-gr-c-s-loaded",
+    "vsc-initialized"
+  ];
+  const cleanNode = (el) => {
+    for (const attr of attrs) {
+      if (el.hasAttribute(attr)) {
+        el.removeAttribute(attr);
+      }
+    }
+    for (const { name } of Array.from(el.attributes)) {
+      if (name.startsWith("__processed_")) {
+        el.removeAttribute(name);
+      }
+    }
+  };
+  cleanNode(document.documentElement);
+  cleanNode(document.body);
+  for (const el of document.querySelectorAll("*")) {
+    cleanNode(el);
+  }
+})();`}
+        </Script>
+        {children}
+      </body>
     </html>
   );
 }
