@@ -1,20 +1,15 @@
 "use client";
 
+import PhotographerSidebar from "@/components/photographer-sidebar";
 import { RequireRole } from "@/components/auth-guard";
-import { RoleLayoutShell } from "@/components/role-layout";
-
-const NAV = [
-  { href: "/photographer", label: "Dashboard" },
-  { href: "/photographer/events", label: "My Events" },
-  { href: "/p/new", label: "Upload / Sync (Legacy)" },
-];
 
 export default function PhotographerLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireRole allowedRoles={["PHOTOGRAPHER", "SUPER_ADMIN"]}>
-      <RoleLayoutShell title="Photographer Studio" navItems={NAV}>
-        {children}
-      </RoleLayoutShell>
+      <div className="flex min-h-screen w-full flex-row overflow-hidden bg-slate-50">
+        <PhotographerSidebar />
+        <main className="flex flex-1 flex-col min-w-0 overflow-y-auto p-8">{children}</main>
+      </div>
     </RequireRole>
   );
 }
