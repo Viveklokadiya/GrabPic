@@ -250,13 +250,13 @@ export default function HomePage() {
         <div className="mx-auto flex w-[min(1120px,92vw)] flex-col items-start justify-between gap-4 text-sm md:flex-row md:items-center">
           <p>© {year} GrabPic</p>
           <div className="flex flex-wrap items-center gap-5">
-            <a href="#" className="transition hover:text-white">
+            <a href="/privacy" className="transition hover:text-white">
               Privacy
             </a>
-            <a href="#" className="transition hover:text-white">
+            <a href="/terms" className="transition hover:text-white">
               Terms
             </a>
-            <a href="#" className="transition hover:text-white">
+            <a href="/contact" className="transition hover:text-white">
               Contact
             </a>
           </div>
