@@ -42,6 +42,7 @@ def login(
     if not result:
         raise APIException("invalid_credentials", "Invalid email or password", status.HTTP_401_UNAUTHORIZED)
     token, user = result
+    db.commit()
     return _auth_response(user=user, access_token=token)
 
 
@@ -89,6 +90,7 @@ def login_with_google(
         )
     except ValueError as exc:
         raise APIException("account_disabled", str(exc), status.HTTP_403_FORBIDDEN)
+    db.commit()
     return _auth_response(user=user, access_token=access_token)
 
 
@@ -104,6 +106,7 @@ def me(
     user = get_user_by_token(db, token)
     if not user:
         raise APIException("invalid_token", "Invalid or expired access token", status.HTTP_401_UNAUTHORIZED)
+    db.commit()
     return AuthMeResponse(
         user_id=user.user_id,
         email=user.email,
@@ -121,6 +124,7 @@ def logout(authorization: str | None = Header(default=None), db: Session = Depen
     revoked = revoke_session_by_token(db, token)
     if not revoked:
         raise APIException("invalid_token", "Invalid or expired access token", status.HTTP_401_UNAUTHORIZED)
+    db.commit()
     return {"ok": True}
 
 
