@@ -182,6 +182,9 @@ def resync_event(
 ) -> JobResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
+    active_job = _latest_active_event_processing_job(db=db, event_id=event.id)
+    if active_job:
+        return _job_response(active_job)
     event.status = "syncing"
     job = create_job(
         db,
@@ -924,6 +927,9 @@ def photographer_sync_event(
 ) -> JobResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
+    active_job = _latest_active_event_processing_job(db=db, event_id=event.id)
+    if active_job:
+        return _job_response(active_job)
     event.status = "syncing"
     job = create_job(
         db,
@@ -1215,6 +1221,23 @@ def _latest_event_processing_job(db: Session, event_id: str) -> Job | None:
 
 
 def _latest_cancelable_event_job(db: Session, event_id: str) -> Job | None:
+    return (
+        db.execute(
+            select(Job)
+            .where(
+                Job.event_id == event_id,
+                Job.job_type.in_([JOB_SYNC_EVENT, JOB_CLUSTER_EVENT]),
+                Job.status.in_([JOB_STATUS_QUEUED, JOB_STATUS_RUNNING, JOB_STATUS_CANCEL_REQUESTED]),
+            )
+            .order_by(Job.created_at.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _latest_active_event_processing_job(db: Session, event_id: str) -> Job | None:
     return (
         db.execute(
             select(Job)

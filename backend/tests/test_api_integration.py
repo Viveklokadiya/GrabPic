@@ -77,6 +77,32 @@ def test_resync_requires_valid_session(client, db_session: Session) -> None:
     assert ok.json()["type"] == "sync_event"
 
 
+def test_resync_reuses_active_processing_job(client, db_session: Session) -> None:
+    access_token = _login(client, "studio1@grabpic.com")
+    created = client.post(
+        "/api/v1/events",
+        json={"name": "Resume Event", "drive_link": "https://drive.google.com/drive/folders/1abcDEF_resume01"},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert created.status_code == 201
+    event_id = created.json()["event_id"]
+    initial_job_id = created.json()["initial_job_id"]
+
+    resync = client.post(
+        f"/api/v1/events/{event_id}/resync",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert resync.status_code == 202
+    assert resync.json()["job_id"] == initial_job_id
+
+    job_count = int(
+        db_session.query(Job)
+        .filter(Job.event_id == event_id, Job.job_type == "sync_event")
+        .count()
+    )
+    assert job_count == 1
+
+
 def test_cancel_job_requires_valid_session(client, db_session: Session) -> None:
     access_token = _login(client)
     created = client.post(

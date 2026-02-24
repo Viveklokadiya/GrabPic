@@ -65,7 +65,7 @@ export function useAuth() {
       role,
       token,
       isLoading,
-      logout: async () => {
+      logout: async (options?: { redirectTo?: string | false }) => {
         if (token) {
           try {
             await logoutCurrentSession(token);
@@ -76,6 +76,10 @@ export function useAuth() {
         clearAuthSession();
         setUser(null);
         setToken("");
+        const redirectTo = options?.redirectTo === false ? "" : String(options?.redirectTo || "/login");
+        if (redirectTo && typeof window !== "undefined") {
+          window.location.assign(redirectTo);
+        }
       },
     }),
     [user, role, token, isLoading]

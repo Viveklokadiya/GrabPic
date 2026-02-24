@@ -4,13 +4,13 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import SessionLocal
 from app.ml.face_engine import FaceEngine
-from app.models import Event, Face, GuestQuery, GuestResult, Job, Photo
+from app.models import Event, Face, FaceCluster, GuestQuery, GuestResult, Job, Photo
 from app.services.clustering import cluster_event_faces
 from app.services.jobs import (
     JOB_CLUSTER_EVENT,
@@ -155,6 +155,7 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
         folder_id=event.drive_folder_id,
         max_images=settings.max_sync_images,
     )
+    files = [item for item in files if str(item.get("id") or "").strip()]
     total = len(files)
     if total == 0:
         event.status = "ready"
@@ -176,90 +177,125 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
         db.add(event)
         return
 
-    seen_ids: set[str] = set()
-    refreshed = 0
-    reused = 0
-    failures = 0
-    processed = 0
-    matched_faces = 0
+    existing_rows = db.execute(
+        select(Photo.id, Photo.drive_file_id, Photo.content_stamp).where(Photo.event_id == event.id)
+    ).all()
+    existing_index: dict[str, tuple[str, str]] = {
+        str(drive_file_id): (str(photo_id), str(content_stamp or ""))
+        for photo_id, drive_file_id, content_stamp in existing_rows
+        if str(drive_file_id or "").strip()
+    }
 
-    for idx, file_item in enumerate(files, start=1):
+    refresh_queue: list[tuple[dict, str, str | None]] = []
+    seen_ids: set[str] = set()
+    reused = 0
+    for file_item in files:
+        file_id = str(file_item.get("id") or "")
+        if not file_id:
+            continue
+        seen_ids.add(file_id)
+        stamp = build_content_stamp(file_item)
+        existing = existing_index.get(file_id)
+        if existing and existing[1] == stamp:
+            reused += 1
+            continue
+        refresh_queue.append((file_item, stamp, existing[0] if existing else None))
+
+    refreshed = 0
+    failures = 0
+    processed = reused
+    matched_faces = 0
+    if reused > 0:
+        resumed_percent = max(2.0, min(95.0, (reused / total) * 100.0))
+        mark_job_progress(db, job, progress_percent=resumed_percent, stage=f"resuming from {reused}/{total}")
+        upsert_job_payload(
+            job,
+            {
+                "phase": "processing",
+                "total_listed": total,
+                "completed": reused,
+                "processed": processed,
+                "matched_faces": matched_faces,
+                "refreshed_files": refreshed,
+                "reused_files": reused,
+                "refresh_queue_total": len(refresh_queue),
+                "failures": failures,
+            },
+        )
+        db.commit()
+        event = db.get(Event, event.id)
+        job = db.get(Job, job.id)
+        if not event or not job:
+            raise RuntimeError("Event or job missing after sync resume commit")
+
+    for refresh_idx, (file_item, stamp, existing_photo_id) in enumerate(refresh_queue, start=1):
         if _is_cancel_requested(db, job.id):
             _cancel_sync_or_cluster_job(db=db, job=job, event=event)
             return
         file_id = str(file_item.get("id") or "")
         if not file_id:
             continue
-        seen_ids.add(file_id)
-        stamp = build_content_stamp(file_item)
-        photo = db.execute(
-            select(Photo).where(Photo.event_id == event.id, Photo.drive_file_id == file_id).limit(1)
-        ).scalar_one_or_none()
-
-        needs_refresh = photo is None or str(photo.content_stamp) != stamp
         try:
-            if needs_refresh:
-                image_bytes = download_public_drive_image(api_key=settings.google_drive_api_key, file_id=file_id)
-                thumb_path = save_thumbnail(
-                    settings=settings,
+            photo = db.get(Photo, existing_photo_id) if existing_photo_id else None
+            image_bytes = download_public_drive_image(api_key=settings.google_drive_api_key, file_id=file_id)
+            thumb_path = save_thumbnail(
+                settings=settings,
+                event_id=event.id,
+                drive_file_id=file_id,
+                image_bytes=image_bytes,
+                max_size=settings.thumbnail_max_size,
+            )
+            if not photo:
+                photo = Photo(
                     event_id=event.id,
                     drive_file_id=file_id,
-                    image_bytes=image_bytes,
-                    max_size=settings.thumbnail_max_size,
+                    file_name=str(file_item.get("name") or file_id),
+                    mime_type=str(file_item.get("mimeType") or "image/jpeg"),
+                    web_view_link=str(file_item.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"),
+                    preview_url=f"https://drive.google.com/thumbnail?id={file_id}&sz=w1200",
+                    download_url=f"https://drive.google.com/uc?export=download&id={file_id}",
+                    thumbnail_path=thumb_path,
+                    content_stamp=stamp,
+                    status="ok",
                 )
-                if not photo:
-                    photo = Photo(
-                        event_id=event.id,
-                        drive_file_id=file_id,
-                        file_name=str(file_item.get("name") or file_id),
-                        mime_type=str(file_item.get("mimeType") or "image/jpeg"),
-                        web_view_link=str(file_item.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"),
-                        preview_url=f"https://drive.google.com/thumbnail?id={file_id}&sz=w1200",
-                        download_url=f"https://drive.google.com/uc?export=download&id={file_id}",
-                        thumbnail_path=thumb_path,
-                        content_stamp=stamp,
-                        status="ok",
-                    )
-                    db.add(photo)
-                    db.flush()
-                else:
-                    photo.file_name = str(file_item.get("name") or photo.file_name)
-                    photo.mime_type = str(file_item.get("mimeType") or photo.mime_type)
-                    photo.web_view_link = str(file_item.get("webViewLink") or photo.web_view_link)
-                    photo.preview_url = f"https://drive.google.com/thumbnail?id={file_id}&sz=w1200"
-                    photo.download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-                    photo.thumbnail_path = thumb_path
-                    photo.content_stamp = stamp
-                    photo.status = "ok"
-                    db.add(photo)
-                    db.execute(delete(Face).where(Face.photo_id == photo.id))
-
-                faces = face_engine.embed_faces(image_bytes=image_bytes, max_faces=20)
-                for face_idx, face in enumerate(faces):
-                    bx, by, bw, bh = face.bbox
-                    db.add(
-                        Face(
-                            event_id=event.id,
-                            photo_id=photo.id,
-                            face_index=face_idx,
-                            embedding=face.embedding,
-                            area_ratio=float(face.area_ratio),
-                            det_confidence=float(face.det_confidence),
-                            sharpness=float(face.sharpness),
-                            bbox_x=float(bx),
-                            bbox_y=float(by),
-                            bbox_w=float(bw),
-                            bbox_h=float(bh),
-                            cluster_label=None,
-                        )
-                    )
-                # Flush each image's writes so validation/DB errors are handled
-                # in this iteration, not deferred to a later commit.
+                db.add(photo)
                 db.flush()
-                matched_faces += len(faces)
-                refreshed += 1
             else:
-                reused += 1
+                photo.file_name = str(file_item.get("name") or photo.file_name)
+                photo.mime_type = str(file_item.get("mimeType") or photo.mime_type)
+                photo.web_view_link = str(file_item.get("webViewLink") or photo.web_view_link)
+                photo.preview_url = f"https://drive.google.com/thumbnail?id={file_id}&sz=w1200"
+                photo.download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+                photo.thumbnail_path = thumb_path
+                photo.content_stamp = stamp
+                photo.status = "ok"
+                db.add(photo)
+                db.execute(delete(Face).where(Face.photo_id == photo.id))
+
+            faces = face_engine.embed_faces(image_bytes=image_bytes, max_faces=20)
+            for face_idx, face in enumerate(faces):
+                bx, by, bw, bh = face.bbox
+                db.add(
+                    Face(
+                        event_id=event.id,
+                        photo_id=photo.id,
+                        face_index=face_idx,
+                        embedding=face.embedding,
+                        area_ratio=float(face.area_ratio),
+                        det_confidence=float(face.det_confidence),
+                        sharpness=float(face.sharpness),
+                        bbox_x=float(bx),
+                        bbox_y=float(by),
+                        bbox_w=float(bw),
+                        bbox_h=float(bh),
+                        cluster_label=None,
+                    )
+                )
+            # Flush each image's writes so validation/DB errors are handled
+            # in this iteration, not deferred to a later commit.
+            db.flush()
+            matched_faces += len(faces)
+            refreshed += 1
             processed += 1
         except Exception as exc:
             failures += 1
@@ -270,18 +306,20 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
             if not event or not job:
                 raise RuntimeError("Event or job missing after sync rollback")
 
-        percent = max(2.0, min(95.0, (idx / total) * 100.0))
-        mark_job_progress(db, job, progress_percent=percent, stage=f"processing image {idx}/{total}")
+        overall_completed = reused + refresh_idx
+        percent = max(2.0, min(95.0, (overall_completed / total) * 100.0))
+        mark_job_progress(db, job, progress_percent=percent, stage=f"processing image {overall_completed}/{total}")
         upsert_job_payload(
             job,
             {
                 "phase": "processing",
                 "total_listed": total,
-                "completed": idx,
+                "completed": overall_completed,
                 "processed": processed,
                 "matched_faces": matched_faces,
                 "refreshed_files": refreshed,
                 "reused_files": reused,
+                "refresh_queue_total": len(refresh_queue),
                 "failures": failures,
                 "current_file_id": file_id,
                 "current_file_name": str(file_item.get("name") or file_id),
@@ -301,20 +339,29 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
         db.execute(delete(GuestResult).where(GuestResult.photo_id == photo.id))
         db.delete(photo)
 
-    event.status = "processing_clusters"
-    db.add(event)
-
-    create_job(
-        db,
-        job_type=JOB_CLUSTER_EVENT,
-        event_id=event.id,
-        payload={"trigger": "after_sync", "source_job_id": job.id},
-        stage="queued_for_clustering",
+    existing_cluster_count = int(
+        db.execute(select(func.count(FaceCluster.id)).where(FaceCluster.event_id == event.id)).scalar_one() or 0
     )
+    should_recluster = refreshed > 0 or failures > 0 or existing_cluster_count == 0
+    if should_recluster:
+        event.status = "processing_clusters"
+        db.add(event)
+
+        create_job(
+            db,
+            job_type=JOB_CLUSTER_EVENT,
+            event_id=event.id,
+            payload={"trigger": "after_sync", "source_job_id": job.id},
+            stage="queued_for_clustering",
+        )
+    else:
+        event.status = "ready"
+        db.add(event)
+
     mark_job_completed(
         db,
         job,
-        stage="sync_completed",
+        stage="sync_completed" if should_recluster else "sync_completed_reused",
         payload={
             "phase": "completed",
             "total_listed": total,
@@ -323,7 +370,9 @@ def _process_sync_event(db: Session, job: Job, settings: Settings, face_engine: 
             "matched_faces": matched_faces,
             "refreshed_files": refreshed,
             "reused_files": reused,
+            "refresh_queue_total": len(refresh_queue),
             "failures": failures,
+            "cluster_reused": not should_recluster,
         },
     )
 

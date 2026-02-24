@@ -74,7 +74,7 @@ export default function AdminSidebar() {
                         </div>
                     </div>
                     <button
-                        onClick={() => auth.logout?.()}
+                        onClick={() => void auth.logout?.()}
                         className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-600 hover:bg-red-50 hover:text-red-600 transition-all w-full text-left"
                     >
                         <span className="material-symbols-outlined text-[20px] text-slate-400 group-hover:text-red-600 transition-colors">

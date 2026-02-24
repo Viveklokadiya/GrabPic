@@ -45,13 +45,13 @@ class Settings(BaseSettings):
     cluster_min_samples: int = Field(default=2)
     match_min_confidence: float = Field(default=0.58)
     face_similarity_threshold_percent: float = Field(
-        default=88.0,
+        default=90.0,
         validation_alias=AliasChoices("FACE_SIMILARITY_THRESHOLD"),
     )
-    face_top_margin: float = Field(default=10.0, validation_alias=AliasChoices("FACE_TOP_MARGIN"))
-    face_auto_relax_drop: float = Field(default=14.0, validation_alias=AliasChoices("FACE_AUTO_RELAX_DROP"))
+    face_top_margin: float = Field(default=8.0, validation_alias=AliasChoices("FACE_TOP_MARGIN"))
+    face_auto_relax_drop: float = Field(default=8.0, validation_alias=AliasChoices("FACE_AUTO_RELAX_DROP"))
     face_auto_relax_min_threshold: float = Field(
-        default=70.0,
+        default=78.0,
         validation_alias=AliasChoices("FACE_AUTO_RELAX_MIN_THRESHOLD"),
     )
 
