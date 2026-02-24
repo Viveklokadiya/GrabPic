@@ -1,8 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-
 import type { EventGuestsResponse, EventPhotoSafeResponse, EventProcessingStatusResponse, EventResponse } from "@/lib/api";
 import { backendAssetUrl } from "@/lib/asset-url";
 import {
@@ -18,10 +18,14 @@ function isActiveStatus(value: string | undefined): boolean {
   return value === "QUEUED" || value === "RUNNING";
 }
 
-function statusTone(status: string): string {
-  if (status === "COMPLETED") return "text-teal-700";
-  if (status === "FAILED" || status === "CANCELLED") return "text-red-700";
-  return "text-amber-700";
+function statusConfig(status: string) {
+  const map: Record<string, { badge: string; dot: string; label: string }> = {
+    COMPLETED: { badge: "bg-emerald-100 text-emerald-700 border-emerald-200", dot: "bg-emerald-500", label: "Completed" },
+    RUNNING: { badge: "bg-blue-100 text-blue-700 border-blue-200", dot: "bg-blue-500 animate-pulse", label: "Syncing" },
+    QUEUED: { badge: "bg-amber-100 text-amber-700 border-amber-200", dot: "bg-amber-500", label: "Queued" },
+    FAILED: { badge: "bg-red-100 text-red-700 border-red-200", dot: "bg-red-500", label: "Failed" },
+  };
+  return map[status] ?? { badge: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-400", label: status };
 }
 
 export default function PhotographerEventDetailsPage() {
@@ -33,7 +37,6 @@ export default function PhotographerEventDetailsPage() {
   const [guests, setGuests] = useState<EventGuestsResponse | null>(null);
   const [statusData, setStatusData] = useState<EventProcessingStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [photosLoading, setPhotosLoading] = useState(false);
   const [error, setError] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [canceling, setCanceling] = useState(false);
@@ -41,36 +44,25 @@ export default function PhotographerEventDetailsPage() {
 
   async function loadEventMeta() {
     if (!eventId) return;
-    const [eventResponse, guestsResponse] = await Promise.all([getPhotographerEvent(eventId), getPhotographerEventGuests(eventId)]);
-    setEventData(eventResponse);
-    setGuests(guestsResponse);
+    const [evtResp, guestsResp] = await Promise.all([
+      getPhotographerEvent(eventId),
+      getPhotographerEventGuests(eventId),
+    ]);
+    setEventData(evtResp);
+    setGuests(guestsResp);
   }
 
-  async function loadPhotos(showLoading = false) {
+  async function loadPhotos() {
     if (!eventId) return;
-    if (showLoading) setPhotosLoading(true);
-    try {
-      setPhotos(await getPhotographerEventPhotos(eventId));
-    } finally {
-      if (showLoading) setPhotosLoading(false);
-    }
+    setPhotos(await getPhotographerEventPhotos(eventId));
   }
 
-  async function refreshStatusAndPhotos() {
+  async function refreshStatus() {
     if (!eventId) return;
-    const prevStatus = statusRef.current;
-    const nextStatus = await getPhotographerEventStatus(eventId);
-
-    const shouldReloadPhotos =
-      !prevStatus ||
-      nextStatus.processed_photos !== prevStatus.processed_photos ||
-      nextStatus.total_photos !== prevStatus.total_photos ||
-      nextStatus.status !== prevStatus.status;
-    statusRef.current = nextStatus;
-    setStatusData(nextStatus);
-    if (shouldReloadPhotos || nextStatus.status === "COMPLETED") {
-      await loadPhotos(false);
-    }
+    const next = await getPhotographerEventStatus(eventId);
+    statusRef.current = next;
+    setStatusData(next);
+    if (next.status === "COMPLETED") await loadPhotos();
   }
 
   async function loadAll() {
@@ -78,9 +70,9 @@ export default function PhotographerEventDetailsPage() {
     setLoading(true);
     setError("");
     try {
-      await Promise.all([loadEventMeta(), loadPhotos(true), refreshStatusAndPhotos()]);
+      await Promise.all([loadEventMeta(), loadPhotos(), refreshStatus()]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load event details");
+      setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       setLoading(false);
     }
@@ -91,32 +83,19 @@ export default function PhotographerEventDetailsPage() {
     void loadAll();
   }, [eventId]);
 
-  const inviteUrl = useMemo(() => {
-    if (!eventData?.slug) return "";
-    return `/guest/join?slug=${encodeURIComponent(eventData.slug)}`;
-  }, [eventData?.slug]);
-
-  const publicSelfieUrl = useMemo(() => {
-    if (!eventData?.slug) return "";
-    return (eventData.guest_url || `/g/${eventData.slug}`).trim();
-  }, [eventData?.slug, eventData?.guest_url]);
-
   useEffect(() => {
     if (!eventId) return;
     if (!isActiveStatus(statusData?.status)) return;
-    const timer = window.setInterval(() => {
-      void refreshStatusAndPhotos();
-    }, 2000);
-    return () => window.clearInterval(timer);
+    const timer = setInterval(() => { void refreshStatus(); }, 3000);
+    return () => clearInterval(timer);
   }, [eventId, statusData?.status]);
 
   async function onSync() {
-    if (!eventId) return;
     setSyncing(true);
     setError("");
     try {
       await syncPhotographerEvent(eventId);
-      await Promise.all([loadEventMeta(), refreshStatusAndPhotos()]);
+      await Promise.all([loadEventMeta(), refreshStatus()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start sync");
     } finally {
@@ -125,126 +104,271 @@ export default function PhotographerEventDetailsPage() {
   }
 
   async function onCancel() {
-    if (!eventId) return;
     setCanceling(true);
-    setError("");
-    setStatusData((prev) => {
-      const next = prev ? { ...prev, status: "CANCELLED" } : prev;
-      statusRef.current = next;
-      return next;
-    });
     try {
       await cancelPhotographerEvent(eventId);
-      await Promise.all([loadEventMeta(), refreshStatusAndPhotos()]);
+      await refreshStatus();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to cancel running job");
+      setError(err instanceof Error ? err.message : "Failed to cancel");
     } finally {
       setCanceling(false);
     }
   }
 
-  if (loading) return <p className="text-sm text-muted">Loading event...</p>;
+  const inviteUrl = useMemo(() => {
+    if (!eventData?.slug) return "";
+    return `/guest/join?slug=${encodeURIComponent(eventData.slug)}`;
+  }, [eventData?.slug]);
+
+  const sc = statusConfig(eventData?.status ?? "");
+  const progress = statusData?.progress_percentage ?? 0;
+  const guestList = guests?.guests ?? [];
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-6 max-w-7xl mx-auto w-full animate-pulse">
+        <div className="h-8 bg-slate-200 rounded w-1/3" />
+        <div className="grid grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <main className="grid gap-4">
-      {error ? <p className="text-sm text-red-700">{error}</p> : null}
-      <section className="rounded-xl border border-line bg-white p-5">
-        <h1 className="font-display text-2xl font-semibold text-slate-900">Event Details</h1>
-        <div className="mt-3 grid gap-2 text-sm">
-          <p>
-            <strong>Name:</strong> {eventData?.name || "-"}
-          </p>
-          <p>
-            <strong>Slug:</strong> {eventData?.slug || "-"}
-          </p>
-          <p>
-            <strong>Drive Folder:</strong> {eventData?.drive_folder_id || "-"}
-          </p>
-          <p>
-            <strong>Status:</strong> {eventData?.status || "-"}
-          </p>
-          {inviteUrl ? (
-            <p>
-              <strong>Guest Join URL:</strong>{" "}
-              <a href={inviteUrl} target="_blank" rel="noreferrer" className="underline">
-                {inviteUrl}
-              </a>
-            </p>
-          ) : null}
-          {publicSelfieUrl ? (
-            <p>
-              <strong>Public Selfie URL:</strong>{" "}
-              <a href={publicSelfieUrl} target="_blank" rel="noreferrer" className="underline">
-                {publicSelfieUrl}
-              </a>
-            </p>
-          ) : null}
-          <p className="text-xs text-muted">Guest Join URL auto-joins signed-in guest users directly to this event.</p>
+    <div className="flex flex-col gap-8 max-w-7xl mx-auto w-full">
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-2 text-sm text-slate-400">
+        <Link href="/photographer/events" className="hover:text-primary transition-colors">Events</Link>
+        <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+        <span className="text-slate-900 font-medium">{eventData?.name ?? "Event Details"}</span>
+      </nav>
+
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold border ${sc.badge}`}>
+              <span className={`size-1.5 rounded-full ${sc.dot}`} />
+              {sc.label}
+            </span>
+            <span className="text-xs text-slate-400">ID: {eventId.slice(0, 8)}</span>
+          </div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{eventData?.name ?? "—"}</h1>
+          <p className="text-slate-500 mt-1 text-sm">/{eventData?.slug}</p>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button className="btn btn-primary" onClick={onSync} disabled={syncing}>
-            {syncing ? "Starting..." : "Start Sync / Reprocess"}
-          </button>
+        <div className="flex gap-3">
           <button
-            className="btn btn-secondary"
             onClick={onCancel}
             disabled={canceling || !isActiveStatus(statusData?.status)}
-            type="button"
+            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-all"
           >
-            {canceling ? "Canceling..." : "Cancel Running Job"}
+            <span className="material-symbols-outlined text-[18px]">pause_circle</span>
+            {canceling ? "Canceling..." : "Pause"}
+          </button>
+          <button
+            onClick={onSync}
+            disabled={syncing}
+            className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/25 hover:bg-primary/90 disabled:opacity-60 transition-all"
+          >
+            <span className={`material-symbols-outlined text-[18px] ${syncing ? "animate-spin" : ""}`}>sync</span>
+            {syncing ? "Starting..." : "Sync Now"}
           </button>
         </div>
-        {statusData ? (
-          <div className="mt-3 rounded-lg border border-line p-3">
-            <p className={`text-sm font-semibold ${statusTone(statusData.status)}`}>Job Status: {statusData.status}</p>
-            <p className="mt-1 text-xs text-muted">
-              Processed {statusData.processed_photos} / {statusData.total_photos} | Failed {statusData.failed_photos}
-            </p>
-            <div className="mt-2 h-2 w-full rounded-full bg-bg">
-              <div className="h-2 rounded-full bg-accent transition-all duration-300" style={{ width: `${statusData.progress_percentage}%` }} />
+      </div>
+
+      {error ? <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+
+      {/* Stats cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {[
+          { label: "Total Photos", value: statusData?.total_photos ?? 0, icon: "photo_library", color: "text-indigo-600 bg-indigo-50" },
+          { label: "Processed", value: statusData?.processed_photos ?? 0, icon: "auto_awesome", color: "text-emerald-600 bg-emerald-50" },
+          { label: "Guests", value: guestList.length, icon: "group", color: "text-violet-600 bg-violet-50" },
+        ].map((s) => (
+          <div key={s.label} className="flex flex-col gap-1 rounded-xl p-5 bg-white border border-slate-200 shadow-sm">
+            <div className={`inline-flex items-center justify-center rounded-lg p-2 w-fit mb-2 ${s.color}`}>
+              <span className="material-symbols-outlined text-[22px]">{s.icon}</span>
             </div>
-            <p className="mt-1 text-xs text-muted">
-              {statusData.progress_percentage.toFixed(1)}% | Updated {new Date(statusData.updated_at).toLocaleString()}
-            </p>
+            <p className="text-2xl font-bold text-slate-900 font-mono">{s.value.toLocaleString()}</p>
+            <p className="text-xs text-slate-500 font-medium">{s.label}</p>
           </div>
-        ) : (
-          <p className="mt-3 text-xs text-muted">No processing job yet.</p>
-        )}
-      </section>
+        ))}
+      </div>
 
-      <section className="rounded-xl border border-line bg-white p-5">
-        <h2 className="font-display text-xl font-semibold text-slate-900">Guest List</h2>
-        {guests?.guests?.length ? (
-          <ul className="mt-3 grid gap-2 text-sm">
-            {guests.guests.map((guest) => (
-              <li key={guest.user_id} className="rounded-md border border-line px-3 py-2">
-                {guest.email} - joined {new Date(guest.joined_at).toLocaleString()}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-3 text-sm text-muted">No guests joined yet.</p>
-        )}
-      </section>
+      {/* Sync Progress */}
+      {statusData && (
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
+          <div className="flex items-end justify-between mb-4">
+            <div>
+              <h2 className="font-bold text-slate-900">Batch Processing</h2>
+              <p className="text-sm text-slate-500 mt-0.5">
+                {isActiveStatus(statusData.status) ? "Processing photos from Drive..." : `Status: ${statusData.status}`}
+              </p>
+            </div>
+            <span className="text-3xl font-bold text-primary font-mono">{progress.toFixed(0)}%</span>
+          </div>
+          <div className="relative w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className="absolute top-0 left-0 h-full bg-primary rounded-full transition-all duration-500"
+              style={{ width: `${progress}%`, boxShadow: "0 0 12px rgba(72,72,229,0.4)" }}
+            />
+          </div>
+          <div className="flex justify-between mt-2 text-xs text-slate-400">
+            <span>
+              {statusData.processed_photos} / {statusData.total_photos} photos
+              {statusData.failed_photos > 0 && <span className="text-red-500 ml-2">• {statusData.failed_photos} failed</span>}
+            </span>
+            <span>Updated {new Date(statusData.updated_at).toLocaleTimeString()}</span>
+          </div>
+        </div>
+      )}
 
-      <section className="rounded-xl border border-line bg-white p-5">
-        <h2 className="font-display text-xl font-semibold text-slate-900">Photo Grid</h2>
-        {photosLoading ? <p className="mt-3 text-sm text-muted">Refreshing photos...</p> : null}
-        {!photos.length ? (
-          <p className="mt-3 text-sm text-muted">No photos processed yet.</p>
-        ) : (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {photos.map((photo) => (
-              <article key={photo.photo_id} className="overflow-hidden rounded-lg border border-line">
-                <img src={backendAssetUrl(photo.thumbnail_url)} alt={photo.file_name} className="h-36 w-full object-cover" />
-                <div className="p-2">
-                  <p className="line-clamp-1 text-xs font-medium">{photo.file_name}</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Event Details */}
+        <div className="lg:col-span-2 flex flex-col gap-5">
+          {/* Drive Info */}
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
+            <h2 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[20px]">folder_shared</span>
+              Google Drive Sync
+            </h2>
+            <div className="flex flex-col gap-3 text-sm">
+              <div className="flex items-center justify-between py-3 border-b border-slate-100">
+                <span className="text-slate-500">Current Path</span>
+                <div className="flex items-center gap-2 text-slate-700 font-medium">
+                  <span className="material-symbols-outlined text-slate-400 text-[18px]">folder_open</span>
+                  {eventData?.drive_folder_id ? `.../${eventData.drive_folder_id.slice(0, 20)}` : "Not connected"}
                 </div>
-              </article>
-            ))}
+              </div>
+              <div className="flex items-center justify-between py-2">
+                <span className="text-slate-500">Drive Link</span>
+                {eventData?.drive_link ? (
+                  <a href={eventData.drive_link} target="_blank" rel="noreferrer" className="text-primary hover:underline font-medium text-xs truncate max-w-[200px]">
+                    Open in Drive ↗
+                  </a>
+                ) : <span className="text-slate-400">—</span>}
+              </div>
+              {inviteUrl && (
+                <div className="mt-3 flex flex-col gap-2">
+                  <span className="text-xs font-semibold text-slate-500">Guest Join URL</span>
+                  <div className="flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+                    <span className="material-symbols-outlined text-slate-400 text-[16px]">link</span>
+                    <span className="text-xs text-slate-600 flex-1 truncate">{window?.location?.origin}{inviteUrl}</span>
+                    <button
+                      onClick={() => navigator.clipboard?.writeText(`${window?.location?.origin}${inviteUrl}`)}
+                      className="text-primary hover:text-primary/80"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </section>
-    </main>
+
+          {/* Photo Gallery preview */}
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[20px]">photo_library</span>
+                Live Gallery Preview
+              </h2>
+              <span className="text-xs text-slate-400">{photos.length} photos</span>
+            </div>
+            {photos.length === 0 ? (
+              <div className="py-10 text-center">
+                <span className="material-symbols-outlined text-4xl text-slate-300 mb-2 block">image_not_supported</span>
+                <p className="text-sm text-slate-400">No photos processed yet. Start sync to begin.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {photos.slice(0, 8).map((photo) => (
+                  <div key={photo.photo_id} className="aspect-square overflow-hidden rounded-lg bg-slate-100 group relative">
+                    <img
+                      src={backendAssetUrl(photo.thumbnail_url)}
+                      alt={photo.file_name}
+                      className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
+                  </div>
+                ))}
+                {photos.length > 8 && (
+                  <div className="aspect-square rounded-lg bg-slate-100 flex items-center justify-center text-sm font-bold text-slate-500">
+                    +{photos.length - 8} more
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Guest List Sidebar */}
+        <div className="flex flex-col gap-5">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[20px]">group</span>
+                Guests
+              </h2>
+              <Link
+                href={`/photographer/events/${eventId}/guests`}
+                className="text-xs text-primary font-semibold hover:underline"
+              >
+                Manage →
+              </Link>
+            </div>
+            {guestList.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-6">No guests yet</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {guestList.slice(0, 5).map((g) => {
+                  const initials = g.email.slice(0, 2).toUpperCase();
+                  return (
+                    <li key={g.user_id} className="flex items-center gap-3 py-2 border-b border-slate-50 last:border-0">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{g.email}</p>
+                        <p className="text-xs text-slate-400">{new Date(g.joined_at).toLocaleDateString()}</p>
+                      </div>
+                    </li>
+                  );
+                })}
+                {guestList.length > 5 && (
+                  <li className="text-center pt-1">
+                    <Link href={`/photographer/events/${eventId}/guests`} className="text-xs text-primary font-semibold hover:underline">
+                      +{guestList.length - 5} more guests
+                    </Link>
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
+
+          {/* Quick Links */}
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
+            <h3 className="text-sm font-bold text-slate-700 mb-3">Event Pages</h3>
+            <div className="flex flex-col gap-2">
+              {[
+                { href: `/photographer/events/${eventId}/sync`, icon: "sync_alt", label: "Live Sync Monitor" },
+                { href: `/photographer/events/${eventId}/guests`, icon: "group", label: "Guest Management" },
+                { href: `/photographer/events/${eventId}/settings`, icon: "settings", label: "Event Settings" },
+              ].map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-primary transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">{l.icon}</span>
+                  {l.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

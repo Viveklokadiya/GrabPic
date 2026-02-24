@@ -9,6 +9,12 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      colors: {
+        primary: "#4848e5",
+        "primary-light": "#eef2ff",
+        "primary-dark": "#3730a3",
+        "rose-accent": "#e54885",
+      },
       borderRadius: {
         sm: "10px",
         md: "16px",
