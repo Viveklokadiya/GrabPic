@@ -1,17 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import type { Role, UserSummaryResponse } from "@/lib/api";
-import { getAdminUsers, updateAdminUserRole } from "@/lib/rbac-api";
+import { useAuth } from "@/lib/use-auth";
+import { createAdminUser, getAdminUsers, updateAdminUserRole } from "@/lib/rbac-api";
 
-const ROLES: Role[] = ["SUPER_ADMIN", "PHOTOGRAPHER", "GUEST"];
+const ROLES: Role[] = ["SUPER_ADMIN", "ADMIN", "PHOTOGRAPHER", "GUEST"];
 
 function getRoleBadge(role: Role) {
   switch (role) {
     case "SUPER_ADMIN": return "bg-purple-50 text-purple-700 border-purple-100";
+    case "ADMIN": return "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-100";
     case "PHOTOGRAPHER": return "bg-blue-50 text-blue-700 border-blue-100";
     case "GUEST": return "bg-slate-100 text-slate-600 border-slate-200";
+    default: return "bg-slate-100 text-slate-600 border-slate-200";
   }
 }
 
@@ -24,13 +27,25 @@ function getAvatarColor(email: string) {
   return colors[email.charCodeAt(0) % colors.length];
 }
 
+function assignableRoles(actorRole?: Role): Role[] {
+  if (actorRole === "ADMIN") return ["PHOTOGRAPHER", "GUEST"];
+  return ROLES;
+}
+
 export default function AdminUsersPage() {
+  const auth = useAuth();
   const [users, setUsers] = useState<UserSummaryResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [savingId, setSavingId] = useState("");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<Role | "">("");
+  const [creating, setCreating] = useState(false);
+  const [createEmail, setCreateEmail] = useState("");
+  const [createName, setCreateName] = useState("");
+  const [createPassword, setCreatePassword] = useState("password123");
+  const [createRole, setCreateRole] = useState<Role>("GUEST");
+  const creatableRoles = assignableRoles(auth.user?.role);
 
   async function loadUsers() {
     setLoading(true);
@@ -51,6 +66,35 @@ export default function AdminUsersPage() {
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to update role"); }
     finally { setSavingId(""); }
   }
+
+  async function onCreateUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCreating(true);
+    setError("");
+    try {
+      const created = await createAdminUser({
+        email: createEmail.trim(),
+        name: createName.trim(),
+        password: createPassword,
+        role: createRole,
+      });
+      setUsers((prev) => [created, ...prev]);
+      setCreateEmail("");
+      setCreateName("");
+      setCreatePassword("password123");
+      setCreateRole(creatableRoles[0] || "GUEST");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create user");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!creatableRoles.includes(createRole)) {
+      setCreateRole(creatableRoles[0] || "GUEST");
+    }
+  }, [creatableRoles, createRole]);
 
   const filtered = users.filter((u) => {
     const matchSearch = !search || u.email.toLowerCase().includes(search.toLowerCase());
@@ -75,6 +119,54 @@ export default function AdminUsersPage() {
       </header>
 
       {error && <div className="mb-6 flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700"><span className="material-symbols-outlined text-[18px]">error</span>{error}</div>}
+
+      <form onSubmit={onCreateUser} className="mb-6 rounded-xl bg-white p-4 shadow-sm border border-slate-100">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="material-symbols-outlined text-primary text-[18px]">person_add</span>
+          <h2 className="text-sm font-semibold text-slate-900">Create User</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <input
+            className="block w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 placeholder-slate-400 focus:border-primary focus:ring-1 focus:ring-primary"
+            placeholder="Email"
+            type="email"
+            value={createEmail}
+            onChange={(e) => setCreateEmail(e.target.value)}
+            required
+          />
+          <input
+            className="block w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 placeholder-slate-400 focus:border-primary focus:ring-1 focus:ring-primary"
+            placeholder="Full name"
+            value={createName}
+            onChange={(e) => setCreateName(e.target.value)}
+          />
+          <input
+            className="block w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 placeholder-slate-400 focus:border-primary focus:ring-1 focus:ring-primary"
+            placeholder="Password"
+            type="password"
+            minLength={8}
+            value={createPassword}
+            onChange={(e) => setCreatePassword(e.target.value)}
+            required
+          />
+          <div className="flex gap-2">
+            <select
+              className="block w-full rounded-lg border border-slate-200 bg-white py-2.5 px-3 text-sm text-slate-700 focus:border-primary focus:ring-1 focus:ring-primary"
+              value={createRole}
+              onChange={(e) => setCreateRole(e.target.value as Role)}
+            >
+              {creatableRoles.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
+            </select>
+            <button
+              type="submit"
+              disabled={creating || auth.isLoading}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+            >
+              {creating ? "Creating..." : "Add"}
+            </button>
+          </div>
+        </div>
+      </form>
 
       {/* Filters */}
       <div className="mb-6 grid grid-cols-1 gap-4 rounded-xl bg-white p-4 shadow-sm border border-slate-100 md:grid-cols-3">
@@ -142,14 +234,22 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <div className="relative inline-block">
+                        {(() => {
+                          const canManageAdminRoles = auth.user?.role !== "ADMIN";
+                          const targetIsProtected = user.role === "SUPER_ADMIN" || user.role === "ADMIN";
+                          const disabled = savingId === user.user_id || (targetIsProtected && !canManageAdminRoles);
+                          const options = canManageAdminRoles ? ROLES : ["PHOTOGRAPHER", "GUEST"];
+                          return (
                         <select
                           className="appearance-none cursor-pointer rounded-md border border-slate-200 bg-white py-1.5 pl-3 pr-8 text-xs font-medium text-slate-700 shadow-sm focus:border-primary focus:ring-1 focus:ring-primary hover:bg-slate-50 transition-colors disabled:opacity-50"
                           value={user.role}
-                          disabled={savingId === user.user_id}
+                          disabled={disabled}
                           onChange={(e) => void onRoleChange(user.user_id, e.target.value as Role)}
                         >
-                          {ROLES.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
+                          {options.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
                         </select>
+                          );
+                        })()}
                         <span className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 text-[14px]">expand_more</span>
                       </div>
                     </td>

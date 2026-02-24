@@ -24,9 +24,14 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("GOOGLE_DRIVE_API_KEY", "GOOGLE_API_KEY"),
     )
+    google_oauth_client_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLIENT_ID"),
+    )
     public_frontend_url: str = Field(default="http://localhost:3000")
     cors_allow_origins: str = Field(default="http://localhost:3000,http://127.0.0.1:3000")
     admin_dashboard_key: str = Field(default="", validation_alias=AliasChoices("ADMIN_DASHBOARD_KEY"))
+    auth_session_ttl_hours: int = Field(default=24 * 14, validation_alias=AliasChoices("AUTH_SESSION_TTL_HOURS"))
 
     max_sync_images: int = Field(default=5000)
     thumbnail_max_size: int = Field(default=1200)

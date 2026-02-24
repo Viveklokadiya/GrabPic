@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 import Card from "@/components/card";
 import StatusPill from "@/components/status-pill";
@@ -19,6 +19,7 @@ function statusTone(status: string): "neutral" | "success" | "warn" | "danger" {
 }
 
 export default function GuestResultPage() {
+  const router = useRouter();
   const params = useParams<{ slug: string; queryId: string }>();
   const slug = useMemo(() => String(params?.slug || ""), [params]);
   const queryId = useMemo(() => String(params?.queryId || ""), [params]);
@@ -41,7 +42,13 @@ export default function GuestResultPage() {
         }
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Could not fetch results");
+        const message = err instanceof Error ? err.message : "Could not fetch results";
+        setError(message);
+        if (/sign in|authentication required/i.test(message)) {
+          const nextPath = `/g/${slug}/result/${queryId}`;
+          router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+          return;
+        }
         setTimeout(poll, 3000);
       }
     }
@@ -50,7 +57,7 @@ export default function GuestResultPage() {
     return () => {
       cancelled = true;
     };
-  }, [queryId]);
+  }, [queryId, router, slug]);
 
   return (
     <main className="grid gap-5">
@@ -99,4 +106,3 @@ export default function GuestResultPage() {
     </main>
   );
 }
-

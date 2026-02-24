@@ -3,6 +3,7 @@ import type {
   AdminEventStatusItem,
   AdminEventsResponse,
   AdminJobRow,
+  CreateUserRequest,
   EventCreateResponse,
   EventMembershipResponse,
   EventUpdateRequest,
@@ -33,6 +34,13 @@ export function getAdminUsers() {
   return apiFetch<UserSummaryResponse[]>("/admin/users");
 }
 
+export function createAdminUser(input: CreateUserRequest) {
+  return apiFetch<UserSummaryResponse>("/admin/users", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function updateAdminUserRole(userId: string, role: Role) {
   return apiFetch<UserSummaryResponse>(`/admin/users/${encodeURIComponent(userId)}/role`, {
     method: "PATCH",
@@ -58,7 +66,12 @@ export function getPhotographerEvents() {
   return apiFetch<PhotographerEventListItem[]>("/photographer/events");
 }
 
-export function createPhotographerEvent(input: { name: string; drive_link: string; slug?: string }) {
+export function createPhotographerEvent(input: {
+  name: string;
+  drive_link: string;
+  slug?: string;
+  guest_auth_required?: boolean;
+}) {
   return apiFetch<EventCreateResponse>("/photographer/events", {
     method: "POST",
     body: JSON.stringify(input),
@@ -74,17 +87,17 @@ export function syncPhotographerEvent(eventId: string) {
 }
 
 export function getPhotographerEventStatus(eventId: string) {
-  return apiFetch<EventProcessingStatusResponse>(`/events/${encodeURIComponent(eventId)}/status`);
+  return apiFetch<EventProcessingStatusResponse>(`/photographer/events/${encodeURIComponent(eventId)}/status`);
 }
 
 export function cancelPhotographerEvent(eventId: string) {
-  return apiFetch<EventProcessingStatusResponse>(`/events/${encodeURIComponent(eventId)}/cancel`, {
+  return apiFetch<EventProcessingStatusResponse>(`/photographer/events/${encodeURIComponent(eventId)}/cancel`, {
     method: "POST",
   });
 }
 
 export function getPhotographerEventPhotos(eventId: string) {
-  return apiFetch<EventPhotoSafeResponse[]>(`/events/${encodeURIComponent(eventId)}/photos`);
+  return apiFetch<EventPhotoSafeResponse[]>(`/photographer/events/${encodeURIComponent(eventId)}/photos`);
 }
 
 export function getPhotographerEventGuests(eventId: string) {

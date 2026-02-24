@@ -26,13 +26,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    env_file:
-      - ./backend/.env.example
     environment:
       DATABASE_URL: postgresql+psycopg://grabpic:grabpic@postgres:5432/grabpic
       STORAGE_ROOT: /app/storage
       PUBLIC_FRONTEND_URL: https://grabpic.tech
       CORS_ALLOW_ORIGINS: https://grabpic.tech,https://www.grabpic.tech
+      GOOGLE_DRIVE_API_KEY: ${GOOGLE_DRIVE_API_KEY:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-336}
     command: >
       sh -lc "until alembic upgrade head; do echo 'waiting for postgres/migrations'; sleep 2; done;
       uvicorn app.main:app --host 0.0.0.0 --port 8000"
@@ -53,12 +54,13 @@ services:
         condition: service_healthy
       backend-api:
         condition: service_started
-    env_file:
-      - ./backend/.env.example
     environment:
       DATABASE_URL: postgresql+psycopg://grabpic:grabpic@postgres:5432/grabpic
       STORAGE_ROOT: /app/storage
       PUBLIC_FRONTEND_URL: https://grabpic.tech
+      GOOGLE_DRIVE_API_KEY: ${GOOGLE_DRIVE_API_KEY:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-336}
     command: python -m app.worker
     volumes:
       - ./backend:/app
@@ -73,6 +75,7 @@ services:
       - backend-api
     environment:
       NEXT_PUBLIC_API_BASE_URL: /api/v1
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
     ports:
       - "127.0.0.1:13000:3000"
     command: sh -lc "npm install && npm run dev -- --hostname 0.0.0.0 --port 3000"

@@ -4,15 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type { Role, UserSummaryResponse } from "@/lib/api";
 import type { AdminEventOverview } from "@/lib/api";
+import { useAuth } from "@/lib/use-auth";
 import { getAdminUsers, getAdminEventsOverview, updateAdminUserRole } from "@/lib/rbac-api";
 
-const ROLES: Role[] = ["SUPER_ADMIN", "PHOTOGRAPHER", "GUEST"];
+const ROLES: Role[] = ["SUPER_ADMIN", "ADMIN", "PHOTOGRAPHER", "GUEST"];
 
 function getRoleBadge(role: Role) {
     switch (role) {
         case "SUPER_ADMIN": return "bg-purple-50 text-purple-700 border-purple-100";
+        case "ADMIN": return "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-100";
         case "PHOTOGRAPHER": return "bg-blue-50 text-blue-700 border-blue-100";
         case "GUEST": return "bg-slate-100 text-slate-600 border-slate-200";
+        default: return "bg-slate-100 text-slate-600 border-slate-200";
     }
 }
 
@@ -46,6 +49,7 @@ const ACTIVITY_TEMPLATES = [
 ];
 
 export default function AdminUserProfilePage() {
+    const auth = useAuth();
     const { id } = useParams<{ id: string }>();
     const router = useRouter();
     const [user, setUser] = useState<UserSummaryResponse | null>(null);
@@ -54,6 +58,10 @@ export default function AdminUserProfilePage() {
     const [error, setError] = useState("");
     const [saving, setSaving] = useState(false);
     const [selectedRole, setSelectedRole] = useState<Role>("GUEST");
+    const editableRoles = useMemo<Role[]>(
+        () => (auth.user?.role === "ADMIN" ? ["PHOTOGRAPHER", "GUEST"] : ROLES),
+        [auth.user?.role]
+    );
 
     useEffect(() => {
         async function load() {
@@ -75,6 +83,10 @@ export default function AdminUserProfilePage() {
 
     async function handleRoleUpdate() {
         if (!user) return;
+        if (auth.user?.role === "ADMIN" && (user.role === "SUPER_ADMIN" || user.role === "ADMIN")) {
+            setError("Admin cannot modify SUPER_ADMIN or ADMIN users.");
+            return;
+        }
         setSaving(true); setError("");
         try {
             const updated = await updateAdminUserRole(user.user_id, selectedRole);
@@ -173,13 +185,17 @@ export default function AdminUserProfilePage() {
                                     onChange={(e) => setSelectedRole(e.target.value as Role)}
                                     className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-8 text-sm text-slate-900 focus:border-primary focus:ring-1 focus:ring-primary"
                                 >
-                                    {ROLES.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
+                                    {editableRoles.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
                                 </select>
                                 <span className="material-symbols-outlined absolute right-3 top-2.5 pointer-events-none text-slate-400 text-[18px]">arrow_drop_down</span>
                             </div>
                             <button
                                 onClick={handleRoleUpdate}
-                                disabled={saving || selectedRole === user.role}
+                                disabled={
+                                    saving ||
+                                    selectedRole === user.role ||
+                                    (auth.user?.role === "ADMIN" && (user.role === "SUPER_ADMIN" || user.role === "ADMIN"))
+                                }
                                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 px-4 text-sm font-semibold text-white shadow-sm shadow-primary/20 hover:bg-primary/90 transition-colors disabled:opacity-50"
                             >
                                 <span className="material-symbols-outlined text-[18px]">save</span>
@@ -192,12 +208,12 @@ export default function AdminUserProfilePage() {
                     <div className="rounded-xl border border-slate-100 bg-white p-6 shadow-sm">
                         <h3 className="mb-5 text-base font-bold text-slate-900">Account Information</h3>
                         <div className="space-y-4">
-                            {[
-                                { icon: "mail", label: "Email", value: user.email },
-                                { icon: "calendar_today", label: "Date Joined", value: new Date(user.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) },
-                                { icon: "badge", label: "User ID", value: `#${user.user_id.slice(0, 12)}` },
-                                { icon: "login", label: "Status", value: "Active" },
-                            ].map((row) => (
+                                {[
+                                    { icon: "mail", label: "Email", value: user.email },
+                                    { icon: "calendar_today", label: "Date Joined", value: new Date(user.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) },
+                                    { icon: "badge", label: "User ID", value: `#${user.user_id.slice(0, 12)}` },
+                                    { icon: "login", label: "Status", value: user.is_active ? "Active" : "Inactive" },
+                                ].map((row) => (
                                 <div key={row.label} className="flex items-center gap-4">
                                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-400">
                                         <span className="material-symbols-outlined text-[20px]">{row.icon}</span>

@@ -1,23 +1,23 @@
 from __future__ import annotations
 
-import hmac
 import re
 from datetime import datetime, timezone
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, File, Form, Header, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.auth import extract_bearer_token, generate_guest_code, generate_token, hash_secret, verify_secret
+from app.auth import generate_guest_code, generate_token, hash_secret
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.errors import APIException
-from app.local_auth import get_local_user_by_id, list_local_users, update_local_user_role
+from app.local_auth import create_local_user, get_local_user_by_id, list_local_users, update_local_user_role
 from app.models import Event, EventMembership, Face, GuestQuery, GuestResult, Job, Photo
 from app.rbac import (
     AppUser,
     get_current_user_optional,
+    require_auth,
     require_event_access,
     require_event_owner_or_super_admin,
     require_role,
@@ -52,6 +52,7 @@ from app.schemas import (
     GuestResolveResponse,
     JobResponse,
     PhotographerEventListItem,
+    CreateUserRequest,
     UpdateUserRoleRequest,
     UserSummaryResponse,
 )
@@ -77,7 +78,7 @@ def create_event(
     payload: EventCreateRequest,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> EventCreateResponse:
     folder_id = extract_drive_folder_id(payload.drive_link)
     if not folder_id:
@@ -94,8 +95,8 @@ def create_event(
     admin_token = generate_token(24)
 
     owner_user_id = current_user.user_id
-    if current_user.role == Role.SUPER_ADMIN and payload.owner_user_id:
-        owner = get_local_user_by_id(payload.owner_user_id.strip())
+    if current_user.role in {Role.SUPER_ADMIN, Role.ADMIN} and payload.owner_user_id:
+        owner = get_local_user_by_id(db, payload.owner_user_id.strip())
         if not owner:
             raise APIException("invalid_owner", "owner_user_id does not exist", status.HTTP_400_BAD_REQUEST)
         owner_user_id = owner.user_id
@@ -111,6 +112,7 @@ def create_event(
         guest_code_hash=hash_secret(guest_code),
         admin_token_hash=hash_secret(admin_token),
         status="syncing",
+        guest_auth_required=bool(payload.guest_auth_required),
     )
     db.add(event)
     db.flush()
@@ -139,24 +141,15 @@ def create_event(
 @router.get("/events/{event_id}", response_model=EventResponse)
 def get_event(
     event_id: str,
-    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-    current_user: AppUser | None = Depends(get_current_user_optional),
+    current_user: AppUser = Depends(require_auth),
 ) -> EventResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
-    if current_user:
-        require_event_access(db=db, event=event, user=current_user)
-        if current_user.role == Role.GUEST:
-            jobs: list[Job] = []
-        else:
-            jobs = (
-                db.execute(select(Job).where(Job.event_id == event_id).order_by(Job.created_at.desc()).limit(20))
-                .scalars()
-                .all()
-            )
+    require_event_access(db=db, event=event, user=current_user)
+    if current_user.role == Role.GUEST:
+        jobs: list[Job] = []
     else:
-        _require_event_admin(event=event, authorization=authorization)
         jobs = (
             db.execute(select(Job).where(Job.event_id == event_id).order_by(Job.created_at.desc()).limit(20))
             .scalars()
@@ -172,6 +165,7 @@ def get_event(
         drive_folder_id=event.drive_folder_id,
         owner_user_id=event.owner_user_id,
         status=event.status,
+        guest_auth_required=bool(event.guest_auth_required),
         guest_ready=guest_ready,
         guest_url=guest_url,
         created_at=event.created_at,
@@ -183,15 +177,11 @@ def get_event(
 @router.post("/events/{event_id}/resync", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
 def resync_event(
     event_id: str,
-    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
-    current_user: AppUser | None = Depends(get_current_user_optional),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> JobResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
-    if current_user:
-        require_event_owner_or_super_admin(event=event, user=current_user)
-    else:
-        _require_event_admin(event=event, authorization=authorization)
+    require_event_owner_or_super_admin(event=event, user=current_user)
     event.status = "syncing"
     job = create_job(
         db,
@@ -207,30 +197,22 @@ def resync_event(
 @router.get("/events/{event_id}/status", response_model=EventProcessingStatusResponse)
 def event_processing_status(
     event_id: str,
-    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
-    current_user: AppUser | None = Depends(get_current_user_optional),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> EventProcessingStatusResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
-    if current_user:
-        require_event_owner_or_super_admin(event=event, user=current_user)
-    else:
-        _require_event_admin(event=event, authorization=authorization)
+    require_event_owner_or_super_admin(event=event, user=current_user)
     return _build_event_processing_status(db=db, event=event)
 
 
 @router.post("/events/{event_id}/cancel", response_model=EventProcessingStatusResponse)
 def cancel_event_processing(
     event_id: str,
-    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
-    current_user: AppUser | None = Depends(get_current_user_optional),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> EventProcessingStatusResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
-    if current_user:
-        require_event_owner_or_super_admin(event=event, user=current_user)
-    else:
-        _require_event_admin(event=event, authorization=authorization)
+    require_event_owner_or_super_admin(event=event, user=current_user)
 
     job = _latest_cancelable_event_job(db=db, event_id=event.id)
     if job:
@@ -244,10 +226,8 @@ def cancel_event_processing(
 @router.get("/jobs/{job_id}", response_model=JobResponse)
 def get_job(
     job_id: str,
-    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-    current_user: AppUser | None = Depends(get_current_user_optional),
+    current_user: AppUser = Depends(require_auth),
 ) -> JobResponse:
     job = db.get(Job, job_id)
     if not job:
@@ -257,24 +237,17 @@ def get_job(
         event = db.get(Event, job.event_id)
         if not event:
             raise APIException("event_not_found", "Event not found for this job", status.HTTP_404_NOT_FOUND)
-        if current_user:
-            require_event_owner_or_super_admin(event=event, user=current_user)
-        else:
-            _require_event_admin(event=event, authorization=authorization)
-    elif current_user and current_user.role != Role.SUPER_ADMIN:
+        require_event_owner_or_super_admin(event=event, user=current_user)
+    elif current_user.role not in {Role.SUPER_ADMIN, Role.ADMIN}:
         raise APIException("forbidden", "You do not have access to this job", status.HTTP_403_FORBIDDEN)
-    elif not current_user:
-        _require_system_admin(authorization=authorization, settings=settings)
     return _job_response(job)
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
 def cancel_job(
     job_id: str,
-    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-    current_user: AppUser | None = Depends(get_current_user_optional),
+    current_user: AppUser = Depends(require_auth),
 ) -> JobResponse:
     job = db.get(Job, job_id)
     if not job:
@@ -284,15 +257,10 @@ def cancel_job(
         event = db.get(Event, job.event_id)
         if not event:
             raise APIException("event_not_found", "Event not found for this job", status.HTTP_404_NOT_FOUND)
-        if current_user:
-            require_event_owner_or_super_admin(event=event, user=current_user)
-        elif not _is_system_admin(authorization=authorization, settings=settings):
-            _require_event_admin(event=event, authorization=authorization)
+        require_event_owner_or_super_admin(event=event, user=current_user)
     else:
-        if current_user and current_user.role != Role.SUPER_ADMIN:
+        if current_user.role not in {Role.SUPER_ADMIN, Role.ADMIN}:
             raise APIException("forbidden", "You do not have access to this job", status.HTTP_403_FORBIDDEN)
-        elif not current_user:
-            _require_system_admin(authorization=authorization, settings=settings)
 
     request_job_cancel(db, job, reason="Canceled by admin")
     _apply_cancellation_side_effects(db=db, job=job)
@@ -306,7 +274,7 @@ def update_event(
     payload: EventUpdateRequest,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> EventResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
@@ -321,6 +289,8 @@ def update_event(
             raise APIException("invalid_drive_link", "Invalid Google Drive folder link", status.HTTP_400_BAD_REQUEST)
         event.drive_link = payload.drive_link.strip()
         event.drive_folder_id = folder_id
+    if payload.guest_auth_required is not None:
+        event.guest_auth_required = bool(payload.guest_auth_required)
     db.add(event)
     db.commit()
     jobs = db.execute(select(Job).where(Job.event_id == event_id).order_by(Job.created_at.desc()).limit(20)).scalars().all()
@@ -334,6 +304,7 @@ def update_event(
         drive_folder_id=event.drive_folder_id,
         owner_user_id=event.owner_user_id,
         status=event.status,
+        guest_auth_required=bool(event.guest_auth_required),
         guest_ready=guest_ready,
         guest_url=guest_url,
         created_at=event.created_at,
@@ -346,7 +317,7 @@ def update_event(
 def delete_event(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> dict[str, bool]:
     event = _get_event_or_404(db=db, event_id=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
@@ -359,7 +330,7 @@ def delete_event(
 def list_event_photos(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> list[EventPhotoSafeResponse]:
     event = _get_event_or_404(db=db, event_id=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
@@ -380,7 +351,7 @@ def list_event_photos(
 def list_event_guests(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> EventGuestsResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
@@ -391,7 +362,7 @@ def list_event_guests(
     )
     guests: list[EventGuestInfo] = []
     for row in rows:
-        user = get_local_user_by_id(row.user_id)
+        user = get_local_user_by_id(db, row.user_id)
         guests.append(EventGuestInfo(user_id=row.user_id, email=user.email if user else row.user_id, joined_at=row.created_at))
     return EventGuestsResponse(event_id=event.id, guests=guests)
 
@@ -407,14 +378,19 @@ def resolve_guest_event(payload: GuestResolveRequest, db: Session = Depends(get_
             "Event is still processing images. Try again after processing completes.",
             status.HTTP_409_CONFLICT,
         )
-    return GuestResolveResponse(event_id=event.id, slug=event.slug, status=event.status)
+    return GuestResolveResponse(
+        event_id=event.id,
+        slug=event.slug,
+        status=event.status,
+        requires_auth=bool(event.guest_auth_required),
+    )
 
 
 @router.post("/guest/events/{event_id}/join", response_model=EventMembershipResponse, status_code=status.HTTP_201_CREATED)
 def join_event_as_guest(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> EventMembershipResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     membership = db.execute(
@@ -432,7 +408,7 @@ def join_event_as_guest(
 def join_event_from_link(
     payload: GuestJoinLinkRequest,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> EventMembershipResponse:
     event = db.execute(select(Event).where(Event.slug == payload.slug.strip().lower()).limit(1)).scalar_one_or_none()
     if not event:
@@ -467,14 +443,17 @@ async def create_guest_match(
             "Event is still processing images. Try again after processing completes.",
             status.HTTP_409_CONFLICT,
         )
-    if current_user:
-        if current_user.role != Role.GUEST:
-            raise APIException("forbidden", "Only guests can upload selfies", status.HTTP_403_FORBIDDEN)
-        membership = db.execute(
-            select(EventMembership).where(EventMembership.event_id == event.id, EventMembership.user_id == current_user.user_id).limit(1)
-        ).scalar_one_or_none()
-        if not membership:
-            raise APIException("forbidden", "Join this event before uploading a selfie", status.HTTP_403_FORBIDDEN)
+    if event.guest_auth_required:
+        if not current_user:
+            raise APIException("not_authenticated", "Please sign in to upload selfie for this event", status.HTTP_401_UNAUTHORIZED)
+        if current_user.role not in {Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN}:
+            raise APIException("forbidden", "This role cannot upload selfie for guest matching", status.HTTP_403_FORBIDDEN)
+        if current_user.role == Role.GUEST:
+            membership = db.execute(
+                select(EventMembership).where(EventMembership.event_id == event.id, EventMembership.user_id == current_user.user_id).limit(1)
+            ).scalar_one_or_none()
+            if not membership:
+                raise APIException("forbidden", "Join this event before uploading a selfie", status.HTTP_403_FORBIDDEN)
     if not selfie.content_type or not selfie.content_type.startswith("image/"):
         raise APIException("invalid_selfie", "Upload a valid image file", status.HTTP_400_BAD_REQUEST)
 
@@ -487,7 +466,7 @@ async def create_guest_match(
         event=event,
         payload=payload,
         file_name=selfie.filename or "selfie.jpg",
-        guest_user_id=current_user.user_id if current_user else None,
+        guest_user_id=current_user.user_id if current_user and current_user.role == Role.GUEST else None,
     )
 
 
@@ -503,7 +482,7 @@ def get_guest_match(
     if query.guest_user_id:
         if not current_user:
             raise APIException("not_authenticated", "Authentication required", status.HTTP_401_UNAUTHORIZED)
-        if current_user.role != Role.SUPER_ADMIN and current_user.user_id != query.guest_user_id:
+        if current_user.role not in {Role.SUPER_ADMIN, Role.ADMIN} and current_user.user_id != query.guest_user_id:
             raise APIException("forbidden", "You cannot access this guest result", status.HTTP_403_FORBIDDEN)
 
     if query.status in {"queued", "running"}:
@@ -555,17 +534,10 @@ def health() -> dict[str, str | bool]:
 @router.get("/admin/events", response_model=AdminEventsResponse)
 def admin_events_overview(
     limit: int = 40,
-    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-    current_user: AppUser | None = Depends(get_current_user_optional),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> AdminEventsResponse:
-    if current_user:
-        if current_user.role != Role.SUPER_ADMIN:
-            raise APIException("forbidden", "Super admin access required", status.HTTP_403_FORBIDDEN)
-    else:
-        _require_system_admin(authorization=authorization, settings=settings)
-
     safe_limit = max(1, min(200, int(limit)))
     total_events = int(db.execute(select(func.count(Event.id))).scalar_one() or 0)
     events = db.execute(select(Event).order_by(Event.created_at.desc()).limit(safe_limit)).scalars().all()
@@ -676,33 +648,79 @@ def admin_events_overview(
 
 
 @router.get("/admin/users", response_model=list[UserSummaryResponse])
-def admin_list_users(current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN]))) -> list[UserSummaryResponse]:
+def admin_list_users(
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN])),
+) -> list[UserSummaryResponse]:
     _ = current_user
     return [
         UserSummaryResponse(
             user_id=user.user_id,
             email=user.email,
+            name=user.name,
             role=user.role,
+            is_active=True,
             created_at=user.created_at,
         )
-        for user in list_local_users()
+        for user in list_local_users(db)
     ]
+
+
+@router.post("/admin/users", response_model=UserSummaryResponse, status_code=status.HTTP_201_CREATED)
+def admin_create_user(
+    payload: CreateUserRequest,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN])),
+) -> UserSummaryResponse:
+    if current_user.role == Role.ADMIN and payload.role in {Role.SUPER_ADMIN, Role.ADMIN}:
+        raise APIException("forbidden", "Admin cannot create SUPER_ADMIN or ADMIN users", status.HTTP_403_FORBIDDEN)
+    try:
+        created = create_local_user(
+            db,
+            email=payload.email,
+            password=payload.password,
+            role=payload.role,
+            name=payload.name,
+        )
+    except ValueError as exc:
+        raise APIException("invalid_user_payload", str(exc), status.HTTP_400_BAD_REQUEST)
+    db.commit()
+    return UserSummaryResponse(
+        user_id=created.user_id,
+        email=created.email,
+        name=created.name,
+        role=created.role,
+        is_active=True,
+        created_at=created.created_at,
+    )
 
 
 @router.patch("/admin/users/{user_id}/role", response_model=UserSummaryResponse)
 def admin_change_user_role(
     user_id: str,
     payload: UpdateUserRoleRequest,
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN])),
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> UserSummaryResponse:
-    _ = current_user
-    updated = update_local_user_role(user_id=user_id, role=payload.role)
+    target = get_local_user_by_id(db, user_id)
+    if not target:
+        raise APIException("user_not_found", "User not found", status.HTTP_404_NOT_FOUND)
+    if current_user.role == Role.ADMIN:
+        if target.role in {Role.SUPER_ADMIN, Role.ADMIN}:
+            raise APIException("forbidden", "Admin cannot modify SUPER_ADMIN or ADMIN users", status.HTTP_403_FORBIDDEN)
+        if payload.role in {Role.SUPER_ADMIN, Role.ADMIN}:
+            raise APIException("forbidden", "Admin cannot assign SUPER_ADMIN or ADMIN roles", status.HTTP_403_FORBIDDEN)
+
+    updated = update_local_user_role(db, user_id=user_id, role=payload.role)
     if not updated:
         raise APIException("user_not_found", "User not found", status.HTTP_404_NOT_FOUND)
+    db.commit()
     return UserSummaryResponse(
         user_id=updated.user_id,
         email=updated.email,
+        name=updated.name,
         role=updated.role,
+        is_active=True,
         created_at=updated.created_at,
     )
 
@@ -710,11 +728,11 @@ def admin_change_user_role(
 @router.get("/admin/stats", response_model=GlobalStatsResponse)
 def admin_global_stats(
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> GlobalStatsResponse:
     _ = current_user
     return GlobalStatsResponse(
-        users=len(list_local_users()),
+        users=len(list_local_users(db)),
         events=int(db.execute(select(func.count(Event.id))).scalar_one() or 0),
         photos=int(db.execute(select(func.count(Photo.id))).scalar_one() or 0),
         jobs=int(db.execute(select(func.count(Job.id))).scalar_one() or 0),
@@ -725,7 +743,7 @@ def admin_global_stats(
 @router.get("/admin/system/metrics", response_model=GlobalStatsResponse)
 def admin_system_metrics(
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> GlobalStatsResponse:
     return admin_global_stats(db=db, current_user=current_user)
 
@@ -734,7 +752,7 @@ def admin_system_metrics(
 def admin_jobs(
     limit: int = 80,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> list[AdminJobRow]:
     _ = current_user
     safe_limit = max(1, min(300, int(limit)))
@@ -759,14 +777,14 @@ def admin_jobs(
 @router.get("/admin/events/status", response_model=list[AdminEventStatusItem])
 def admin_events_status(
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> list[AdminEventStatusItem]:
     _ = current_user
     events = db.execute(select(Event).order_by(Event.updated_at.desc())).scalars().all()
     rows: list[AdminEventStatusItem] = []
     for event in events:
         status_row = _build_event_processing_status(db=db, event=event)
-        owner = get_local_user_by_id(event.owner_user_id or "")
+        owner = get_local_user_by_id(db, event.owner_user_id or "")
         rows.append(
             AdminEventStatusItem(
                 event_id=event.id,
@@ -788,7 +806,7 @@ def admin_events_status(
 def admin_cancel_event_processing(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> EventProcessingStatusResponse:
     _ = current_user
     event = _get_event_or_404(db=db, event_id=event_id)
@@ -804,7 +822,7 @@ def admin_cancel_event_processing(
 @router.get("/photographer/events", response_model=list[PhotographerEventListItem])
 def photographer_events(
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> list[PhotographerEventListItem]:
     stmt = select(Event).order_by(Event.created_at.desc())
     if current_user.role == Role.PHOTOGRAPHER:
@@ -849,7 +867,7 @@ def photographer_create_event(
     payload: EventCreateRequest,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> EventCreateResponse:
     return create_event(payload=payload, db=db, settings=settings, current_user=current_user)
 
@@ -859,7 +877,7 @@ def photographer_event_details(
     event_id: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> EventResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
@@ -878,6 +896,7 @@ def photographer_event_details(
         drive_folder_id=event.drive_folder_id,
         owner_user_id=event.owner_user_id,
         status=event.status,
+        guest_auth_required=bool(event.guest_auth_required),
         guest_ready=guest_ready,
         guest_url=guest_url,
         created_at=event.created_at,
@@ -890,7 +909,7 @@ def photographer_event_details(
 def photographer_event_status(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> EventProcessingStatusResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
@@ -901,7 +920,7 @@ def photographer_event_status(
 def photographer_sync_event(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> JobResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
@@ -921,7 +940,7 @@ def photographer_sync_event(
 def photographer_cancel_event(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> EventProcessingStatusResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
@@ -938,7 +957,7 @@ def photographer_cancel_event(
 def photographer_event_guests(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> EventGuestsResponse:
     return list_event_guests(event_id=event_id, db=db, current_user=current_user)
 
@@ -947,7 +966,7 @@ def photographer_event_guests(
 def photographer_event_photos(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.PHOTOGRAPHER])),
+    current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> list[EventPhotoSafeResponse]:
     return list_event_photos(event_id=event_id, db=db, current_user=current_user)
 
@@ -955,9 +974,9 @@ def photographer_event_photos(
 @router.get("/guest/events", response_model=list[GuestEventListItem])
 def guest_joined_events(
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> list[GuestEventListItem]:
-    if current_user.role == Role.SUPER_ADMIN:
+    if current_user.role in {Role.SUPER_ADMIN, Role.ADMIN}:
         events = db.execute(select(Event).order_by(Event.created_at.desc()).limit(120)).scalars().all()
         return [
             GuestEventListItem(
@@ -997,13 +1016,13 @@ def guest_joined_events(
 def guest_event_summary(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> GuestEventSummary:
     event = _get_event_or_404(db=db, event_id=event_id)
     membership = db.execute(
         select(EventMembership).where(EventMembership.event_id == event.id, EventMembership.user_id == current_user.user_id).limit(1)
     ).scalar_one_or_none()
-    joined = current_user.role == Role.SUPER_ADMIN or membership is not None
+    joined = current_user.role in {Role.SUPER_ADMIN, Role.ADMIN} or membership is not None
     if current_user.role == Role.GUEST and not joined:
         raise APIException("forbidden", "Join this event first", status.HTTP_403_FORBIDDEN)
     return GuestEventSummary(
@@ -1022,7 +1041,7 @@ async def guest_event_selfie(
     selfie: UploadFile = File(...),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> GuestMatchResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     if event.status != "ready":
@@ -1031,7 +1050,7 @@ async def guest_event_selfie(
             "Event is still processing images. Try again after processing completes.",
             status.HTTP_409_CONFLICT,
         )
-    if current_user.role == Role.GUEST:
+    if event.guest_auth_required and current_user.role == Role.GUEST:
         membership = db.execute(
             select(EventMembership).where(EventMembership.event_id == event.id, EventMembership.user_id == current_user.user_id).limit(1)
         ).scalar_one_or_none()
@@ -1048,7 +1067,7 @@ async def guest_event_selfie(
         event=event,
         payload=payload,
         file_name=selfie.filename or "selfie.jpg",
-        guest_user_id=None if current_user.role == Role.SUPER_ADMIN else current_user.user_id,
+        guest_user_id=current_user.user_id if current_user.role == Role.GUEST else None,
     )
 
 
@@ -1056,7 +1075,7 @@ async def guest_event_selfie(
 def guest_my_photos(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> GuestMyPhotosResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     if current_user.role == Role.GUEST:
@@ -1180,39 +1199,6 @@ def _get_event_or_404(db: Session, event_id: str) -> Event:
     if not event:
         raise APIException("event_not_found", "Event not found", status.HTTP_404_NOT_FOUND)
     return event
-
-
-def _require_event_admin(*, event: Event, authorization: str | None) -> None:
-    token = extract_bearer_token(authorization)
-    if not token:
-        raise APIException("admin_token_required", "Admin token required", status.HTTP_401_UNAUTHORIZED)
-    if not verify_secret(token, event.admin_token_hash):
-        raise APIException("invalid_admin_token", "Invalid admin token", status.HTTP_403_FORBIDDEN)
-
-
-def _require_system_admin(*, authorization: str | None, settings: Settings) -> None:
-    expected = str(settings.admin_dashboard_key or "").strip()
-    if not expected:
-        raise APIException(
-            "admin_dashboard_key_missing",
-            "ADMIN_DASHBOARD_KEY is not configured on the backend",
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-    token = extract_bearer_token(authorization)
-    if not token:
-        raise APIException("admin_key_required", "Admin dashboard key required", status.HTTP_401_UNAUTHORIZED)
-    if not hmac.compare_digest(token, expected):
-        raise APIException("invalid_admin_key", "Invalid admin dashboard key", status.HTTP_403_FORBIDDEN)
-
-
-def _is_system_admin(*, authorization: str | None, settings: Settings) -> bool:
-    expected = str(settings.admin_dashboard_key or "").strip()
-    if not expected:
-        return False
-    token = extract_bearer_token(authorization)
-    if not token:
-        return False
-    return hmac.compare_digest(token, expected)
 
 
 def _latest_event_processing_job(db: Session, event_id: str) -> Job | None:

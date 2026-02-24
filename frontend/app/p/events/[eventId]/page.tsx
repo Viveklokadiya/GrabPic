@@ -53,11 +53,11 @@ export default function EventDashboardPage() {
   }, [eventId]);
 
   async function loadEvent() {
-    if (!eventId || !adminToken.trim()) return;
+    if (!eventId) return;
     setLoading(true);
     setError("");
     try {
-      const response = await getEvent(eventId, adminToken.trim());
+      const response = await getEvent(eventId, adminToken.trim() || undefined);
       setEventData(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load event");
@@ -67,20 +67,20 @@ export default function EventDashboardPage() {
   }
 
   useEffect(() => {
-    if (!eventData || !adminToken.trim()) return;
+    if (!eventData) return;
     if (!isEventProcessingActive(eventData)) return;
     const timer = setInterval(() => {
       void loadEvent();
     }, 1000);
     return () => clearInterval(timer);
-  }, [eventData, adminToken]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [eventData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function triggerResync() {
-    if (!eventId || !adminToken.trim()) return;
+    if (!eventId) return;
     setResyncing(true);
     setError("");
     try {
-      await resyncEvent(eventId, adminToken.trim());
+      await resyncEvent(eventId, adminToken.trim() || undefined);
       await loadEvent();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to queue resync");
@@ -90,11 +90,10 @@ export default function EventDashboardPage() {
   }
 
   async function triggerCancelJob(jobId: string) {
-    if (!adminToken.trim()) return;
     setCancelingJobId(jobId);
     setError("");
     try {
-      await cancelJob(jobId, adminToken.trim());
+      await cancelJob(jobId, adminToken.trim() || undefined);
       await loadEvent();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to cancel job");
@@ -114,7 +113,7 @@ export default function EventDashboardPage() {
         <p className="text-sm text-muted">Event ID: {eventId}</p>
         <div className="mt-4 grid gap-3">
           <label className="text-sm">
-            Admin Token
+            Admin Token (optional for legacy events)
             <input
               className="field mt-1 font-mono text-xs"
               value={adminToken}
@@ -123,7 +122,7 @@ export default function EventDashboardPage() {
             />
           </label>
           <div className="flex flex-wrap gap-2">
-            <button className="btn btn-primary" type="button" onClick={loadEvent} disabled={loading || !adminToken.trim()}>
+            <button className="btn btn-primary" type="button" onClick={loadEvent} disabled={loading}>
               {loading || processingActive ? "Loading..." : "Load Event"}
             </button>
             <button className="btn btn-secondary" type="button" onClick={triggerResync} disabled={resyncing || !eventData}>

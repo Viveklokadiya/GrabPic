@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import type { Role } from "@/lib/api";
 import { roleHomePath } from "@/lib/auth-session";
@@ -9,14 +9,16 @@ import { useAuth } from "@/lib/use-auth";
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const auth = useAuth();
+  const nextPath = pathname || "/";
 
   useEffect(() => {
     if (auth.isLoading) return;
     if (!auth.token || !auth.user) {
-      router.replace("/login");
+      router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
     }
-  }, [auth.isLoading, auth.token, auth.user, router]);
+  }, [auth.isLoading, auth.token, auth.user, nextPath, router]);
 
   if (auth.isLoading) {
     return <div className="page-wrap text-sm text-muted">Checking session...</div>;
@@ -29,18 +31,20 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 
 export function RequireRole({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: Role[] }) {
   const router = useRouter();
+  const pathname = usePathname();
   const auth = useAuth();
+  const nextPath = pathname || "/";
 
   useEffect(() => {
     if (auth.isLoading) return;
     if (!auth.token || !auth.user) {
-      router.replace("/login");
+      router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
       return;
     }
     if (!allowedRoles.includes(auth.user.role)) {
       router.replace("/403");
     }
-  }, [auth.isLoading, auth.token, auth.user, allowedRoles, router]);
+  }, [auth.isLoading, auth.token, auth.user, allowedRoles, nextPath, router]);
 
   if (auth.isLoading) {
     return <div className="page-wrap text-sm text-muted">Checking permissions...</div>;

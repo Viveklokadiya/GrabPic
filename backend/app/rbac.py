@@ -7,27 +7,26 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import extract_bearer_token
-from app.config import Settings, get_settings
+from app.db import get_db
 from app.errors import APIException
-from app.local_auth import AppUser, get_user_by_token
+from app.local_auth import AppUser, ensure_default_users, get_user_by_token
 from app.models import Event, EventMembership
 from app.roles import Role
 
 
-def is_local_auth_enabled(settings: Settings) -> bool:
-    return str(settings.app_env or "").strip().lower() == "local"
+def is_local_auth_enabled() -> bool:
+    return True
 
 
 def get_current_user(
     authorization: str | None = Header(default=None),
-    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
 ) -> AppUser:
-    if not is_local_auth_enabled(settings):
-        raise APIException("auth_disabled", "Local auth is disabled in this environment", status.HTTP_401_UNAUTHORIZED)
+    ensure_default_users(db)
     token = extract_bearer_token(authorization)
     if not token:
         raise APIException("not_authenticated", "Authentication required", status.HTTP_401_UNAUTHORIZED)
-    user = get_user_by_token(token)
+    user = get_user_by_token(db, token)
     if not user:
         raise APIException("invalid_token", "Invalid or expired access token", status.HTTP_401_UNAUTHORIZED)
     return user
@@ -35,14 +34,13 @@ def get_current_user(
 
 def get_current_user_optional(
     authorization: str | None = Header(default=None),
-    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
 ) -> AppUser | None:
     token = extract_bearer_token(authorization)
     if not token:
         return None
-    if not is_local_auth_enabled(settings):
-        return None
-    user = get_user_by_token(token)
+    ensure_default_users(db)
+    user = get_user_by_token(db, token)
     return user
 
 
@@ -62,7 +60,7 @@ def require_role(roles: list[Role]) -> Callable[[AppUser], AppUser]:
 
 
 def can_access_event(*, db: Session, event: Event, user: AppUser) -> bool:
-    if user.role == Role.SUPER_ADMIN:
+    if user.role in {Role.SUPER_ADMIN, Role.ADMIN}:
         return True
     if user.role == Role.PHOTOGRAPHER:
         return bool(event.owner_user_id and event.owner_user_id == user.user_id)
@@ -80,7 +78,7 @@ def require_event_access(*, db: Session, event: Event, user: AppUser) -> None:
 
 
 def require_event_owner_or_super_admin(*, event: Event, user: AppUser) -> None:
-    if user.role == Role.SUPER_ADMIN:
+    if user.role in {Role.SUPER_ADMIN, Role.ADMIN}:
         return
     if user.role == Role.PHOTOGRAPHER and event.owner_user_id == user.user_id:
         return

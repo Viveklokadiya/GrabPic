@@ -16,15 +16,23 @@ This repository now contains a parallel migration to a monorepo architecture whi
 
 ## Run Locally with Docker
 
-1. Set `backend/.env.example` values (especially `GOOGLE_DRIVE_API_KEY`).
-2. Run:
+1. Create local env files:
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
+```
+
+2. Set your keys in `backend/.env` and `frontend/.env.local`:
+`GOOGLE_DRIVE_API_KEY`, `GOOGLE_OAUTH_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+3. Run:
 
 ```bash
 cd infra
 docker compose up --build
 ```
 
-3. Open:
+4. Open:
 
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:8000/api/v1/health`
@@ -57,6 +65,9 @@ python run_worker.py
 Base path: `/api/v1`
 
 - `POST /auth/login` (no `/api/v1` prefix)
+- `POST /auth/google` (no `/api/v1` prefix)
+- `GET /auth/me` (no `/api/v1` prefix)
+- `POST /auth/logout` (no `/api/v1` prefix)
 - `POST /events`
 - `PATCH /events/{event_id}`
 - `DELETE /events/{event_id}`
@@ -77,13 +88,9 @@ Base path: `/api/v1`
 
 ## Local RBAC (Dev Mode)
 
-Local hardcoded auth is enabled only when:
+Auth is DB-backed with persistent sessions. Seed users are auto-created on first login.
 
-```env
-APP_ENV=local
-```
-
-### Login Example
+### Local Login Example
 
 ```bash
 curl -X POST http://localhost:8000/auth/login \
@@ -94,6 +101,7 @@ curl -X POST http://localhost:8000/auth/login \
 ### Local Users
 
 - `superadmin@grabpic.com` / `password123` -> `SUPER_ADMIN`
+- `admin1@grabpic.com` / `password123` -> `ADMIN`
 - `studio1@grabpic.com` / `password123` -> `PHOTOGRAPHER`
 - `studio2@grabpic.com` / `password123` -> `PHOTOGRAPHER`
 - `guest1@grabpic.com` / `password123` -> `GUEST`
@@ -102,6 +110,7 @@ curl -X POST http://localhost:8000/auth/login \
 ### Permissions
 
 - `SUPER_ADMIN`: full access, list users, change roles, global stats, all events.
+- `ADMIN`: admin console access, can manage photographer/guest roles and events.
 - `PHOTOGRAPHER`: create/update/delete own events, run sync, view own event photos and guest list.
 - `GUEST`: join events, upload selfie, view only their own matched results.
 

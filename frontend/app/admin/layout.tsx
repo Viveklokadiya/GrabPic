@@ -5,7 +5,7 @@ import AdminSidebar from "@/components/admin-sidebar";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <RequireRole allowedRoles={["SUPER_ADMIN"]}>
+    <RequireRole allowedRoles={["SUPER_ADMIN", "ADMIN"]}>
       <div className="flex h-screen w-full overflow-hidden bg-[#f6f6f8]">
         {/* Sidebar */}
         <AdminSidebar />

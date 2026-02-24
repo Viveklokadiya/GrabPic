@@ -1,3 +1,7 @@
+import { apiFetch } from "@/lib/api-client";
+
+export type Role = "SUPER_ADMIN" | "ADMIN" | "PHOTOGRAPHER" | "GUEST";
+
 export type JobResponse = {
   job_id: string;
   type: string;
@@ -24,6 +28,7 @@ export type EventUpdateRequest = {
   name?: string;
   drive_link?: string;
   slug?: string;
+  guest_auth_required?: boolean;
 };
 
 export type EventResponse = {
@@ -32,7 +37,9 @@ export type EventResponse = {
   slug: string;
   drive_link: string;
   drive_folder_id: string;
+  owner_user_id: string | null;
   status: string;
+  guest_auth_required: boolean;
   guest_ready: boolean;
   guest_url: string;
   created_at: string;
@@ -55,6 +62,7 @@ export type GuestResolveResponse = {
   event_id: string;
   slug: string;
   status: string;
+  requires_auth: boolean;
 };
 
 export type EventMembershipResponse = {
@@ -85,8 +93,17 @@ export type GuestMatchResponse = {
 export type UserSummaryResponse = {
   user_id: string;
   email: string;
+  name: string;
   role: Role;
+  is_active: boolean;
   created_at: string;
+};
+
+export type CreateUserRequest = {
+  email: string;
+  name?: string;
+  role: Role;
+  password: string;
 };
 
 export type AdminPhotoLink = {
@@ -141,126 +158,21 @@ export type AdminEventsResponse = {
   events: AdminEventOverview[];
 };
 
-export type Role = "SUPER_ADMIN" | "PHOTOGRAPHER" | "GUEST";
-
 export type AuthLoginResponse = {
   user_id: string;
   email: string;
+  name: string;
   role: Role;
   access_token: string;
 };
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
-const AUTH_BASE = API_BASE.replace(/\/api\/v1$/, "");
-
-type ErrorPayload = { error?: { message?: string } };
-
-async function parseResponse<T>(response: Response): Promise<T> {
-  if (response.ok) {
-    return (await response.json()) as T;
-  }
-  let message = `Request failed with ${response.status}`;
-  try {
-    const payload = (await response.json()) as ErrorPayload;
-    if (payload?.error?.message) {
-      message = payload.error.message;
-    }
-  } catch (_err) {
-    // Ignore JSON parse errors and keep default message.
-  }
-  throw new Error(message);
-}
-
-export async function createEvent(input: {
+export type AuthMeResponse = {
+  user_id: string;
+  email: string;
   name: string;
-  drive_link: string;
-  slug?: string;
-}): Promise<EventCreateResponse> {
-  const response = await fetch(`${API_BASE}/events`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input)
-  });
-  return parseResponse<EventCreateResponse>(response);
-}
-
-export async function getEvent(eventId: string, adminToken: string): Promise<EventResponse> {
-  const response = await fetch(`${API_BASE}/events/${encodeURIComponent(eventId)}`, {
-    headers: { Authorization: `Bearer ${adminToken}` },
-    cache: "no-store"
-  });
-  return parseResponse<EventResponse>(response);
-}
-
-export async function resyncEvent(eventId: string, adminToken: string): Promise<JobResponse> {
-  const response = await fetch(`${API_BASE}/events/${encodeURIComponent(eventId)}/resync`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${adminToken}` }
-  });
-  return parseResponse<JobResponse>(response);
-}
-
-export async function cancelJob(jobId: string, token: string): Promise<JobResponse> {
-  const response = await fetch(`${API_BASE}/jobs/${encodeURIComponent(jobId)}/cancel`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  return parseResponse<JobResponse>(response);
-}
-
-export async function resolveGuestEvent(slug: string, guestCode: string): Promise<GuestResolveResponse> {
-  const payload: { slug: string; guest_code?: string } = { slug };
-  const trimmed = String(guestCode || "").trim();
-  if (trimmed) payload.guest_code = trimmed;
-  const response = await fetch(`${API_BASE}/guest/events/resolve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  return parseResponse<GuestResolveResponse>(response);
-}
-
-export async function createGuestMatch(input: {
-  slug: string;
-  guestCode?: string;
-  selfieFile: File;
-}): Promise<GuestMatchResponse> {
-  const form = new FormData();
-  form.set("slug", input.slug);
-  if (input.guestCode?.trim()) {
-    form.set("guest_code", input.guestCode.trim());
-  }
-  form.set("selfie", input.selfieFile);
-  const response = await fetch(`${API_BASE}/guest/matches`, {
-    method: "POST",
-    body: form
-  });
-  return parseResponse<GuestMatchResponse>(response);
-}
-
-export async function getGuestMatch(queryId: string): Promise<GuestMatchResponse> {
-  const response = await fetch(`${API_BASE}/guest/matches/${encodeURIComponent(queryId)}`, {
-    cache: "no-store"
-  });
-  return parseResponse<GuestMatchResponse>(response);
-}
-
-export async function getAdminEvents(adminKey: string, limit = 60): Promise<AdminEventsResponse> {
-  const response = await fetch(`${API_BASE}/admin/events?limit=${encodeURIComponent(String(limit))}`, {
-    headers: { Authorization: `Bearer ${adminKey}` },
-    cache: "no-store"
-  });
-  return parseResponse<AdminEventsResponse>(response);
-}
-
-export async function loginLocal(input: { email: string; password: string }): Promise<AuthLoginResponse> {
-  const response = await fetch(`${AUTH_BASE}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input)
-  });
-  return parseResponse<AuthLoginResponse>(response);
-}
+  role: Role;
+  created_at: string;
+};
 
 export type GlobalStatsResponse = {
   users: number;
@@ -358,3 +270,118 @@ export type GuestMyPhotosResponse = {
   photos: GuestMyPhotoItem[];
   message: string;
 };
+
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
+const AUTH_BASE = API_BASE.replace(/\/api\/v1$/, "");
+
+type ErrorPayload = { error?: { message?: string } };
+
+async function parseResponse<T>(response: Response): Promise<T> {
+  if (response.ok) return (await response.json()) as T;
+  let message = `Request failed with ${response.status}`;
+  try {
+    const payload = (await response.json()) as ErrorPayload;
+    if (payload?.error?.message) message = payload.error.message;
+  } catch (_err) {
+    // keep default error message
+  }
+  throw new Error(message);
+}
+
+function authHeaders(extra?: HeadersInit): Headers {
+  return new Headers(extra || {});
+}
+
+async function authFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = authHeaders(options.headers);
+  if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
+  const response = await fetch(`${AUTH_BASE}${path}`, {
+    ...options,
+    headers,
+    cache: options.cache || "no-store",
+  });
+  return parseResponse<T>(response);
+}
+
+export function createEvent(input: {
+  name: string;
+  drive_link: string;
+  slug?: string;
+  owner_user_id?: string;
+  guest_auth_required?: boolean;
+}) {
+  return apiFetch<EventCreateResponse>("/events", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getEvent(eventId: string, _authorizationToken?: string) {
+  return apiFetch<EventResponse>(`/events/${encodeURIComponent(eventId)}`);
+}
+
+export function resyncEvent(eventId: string, _authorizationToken?: string) {
+  return apiFetch<JobResponse>(`/events/${encodeURIComponent(eventId)}/resync`, {
+    method: "POST",
+  });
+}
+
+export function cancelJob(jobId: string, _authorizationToken?: string) {
+  return apiFetch<JobResponse>(`/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export function resolveGuestEvent(slug: string, guestCode = "") {
+  const payload: { slug: string; guest_code?: string } = { slug };
+  const trimmed = String(guestCode || "").trim();
+  if (trimmed) payload.guest_code = trimmed;
+  return apiFetch<GuestResolveResponse>("/guest/events/resolve", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createGuestMatch(input: { slug: string; guestCode?: string; selfieFile: File }) {
+  const form = new FormData();
+  form.set("slug", input.slug);
+  if (input.guestCode?.trim()) form.set("guest_code", input.guestCode.trim());
+  form.set("selfie", input.selfieFile);
+  return apiFetch<GuestMatchResponse>("/guest/matches", { method: "POST", body: form });
+}
+
+export function getGuestMatch(queryId: string) {
+  return apiFetch<GuestMatchResponse>(`/guest/matches/${encodeURIComponent(queryId)}`);
+}
+
+export function getAdminEvents(limit = 60) {
+  return apiFetch<AdminEventsResponse>(`/admin/events?limit=${encodeURIComponent(String(limit))}`);
+}
+
+export function loginLocal(input: { email: string; password: string }) {
+  return authFetch<AuthLoginResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function loginGoogle(input: { id_token: string }) {
+  return authFetch<AuthLoginResponse>("/auth/google", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getAuthMe(accessToken?: string) {
+  const headers = new Headers();
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  return authFetch<AuthMeResponse>("/auth/me", { headers });
+}
+
+export function logoutCurrentSession(accessToken?: string) {
+  const headers = new Headers();
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  return authFetch<{ ok: boolean }>("/auth/logout", { method: "POST", headers });
+}

@@ -21,12 +21,14 @@ class EventCreateRequest(BaseModel):
     drive_link: str = Field(min_length=10, max_length=1200)
     slug: str | None = Field(default=None, max_length=120)
     owner_user_id: str | None = Field(default=None, max_length=80)
+    guest_auth_required: bool = False
 
 
 class EventUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=160)
     drive_link: str | None = Field(default=None, min_length=10, max_length=1200)
     slug: str | None = Field(default=None, max_length=120)
+    guest_auth_required: bool | None = None
 
 
 class JobResponse(BaseModel):
@@ -59,6 +61,7 @@ class EventResponse(BaseModel):
     drive_folder_id: str
     owner_user_id: str | None
     status: str
+    guest_auth_required: bool
     guest_ready: bool
     guest_url: str
     created_at: datetime
@@ -90,6 +93,7 @@ class GuestResolveResponse(BaseModel):
     event_id: str
     slug: str
     status: str
+    requires_auth: bool
 
 
 class GuestPhotoResponse(BaseModel):
@@ -119,19 +123,41 @@ class AuthLoginRequest(BaseModel):
 class AuthLoginResponse(BaseModel):
     user_id: str
     email: str
+    name: str
     role: Role
     access_token: str
+
+
+class AuthGoogleRequest(BaseModel):
+    id_token: str = Field(min_length=20, max_length=4096)
+
+
+class AuthMeResponse(BaseModel):
+    user_id: str
+    email: str
+    name: str
+    role: Role
+    created_at: datetime
 
 
 class UserSummaryResponse(BaseModel):
     user_id: str
     email: str
+    name: str
     role: Role
+    is_active: bool
     created_at: datetime
 
 
 class UpdateUserRoleRequest(BaseModel):
     role: Role
+
+
+class CreateUserRequest(BaseModel):
+    email: str = Field(min_length=4, max_length=240)
+    name: str = Field(default="", max_length=160)
+    role: Role
+    password: str = Field(default="password123", min_length=8, max_length=120)
 
 
 class GlobalStatsResponse(BaseModel):

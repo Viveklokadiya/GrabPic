@@ -30,7 +30,7 @@ export default function GuestUploadPage() {
     if (!slug) return;
     const session = getAuthSession();
     if (!session) return;
-    if (session.role !== "GUEST" && session.role !== "SUPER_ADMIN") return;
+    if (session.role !== "GUEST" && session.role !== "SUPER_ADMIN" && session.role !== "ADMIN") return;
     setRedirectingToGuestPortal(true);
     router.replace(`/guest/join?slug=${encodeURIComponent(slug)}`);
   }, [router, slug]);
@@ -73,7 +73,13 @@ export default function GuestUploadPage() {
     setError("");
     setLoading(true);
     try {
-      await resolveGuestEvent(slug, guestCode.trim().toUpperCase());
+      const resolved = await resolveGuestEvent(slug, guestCode.trim().toUpperCase());
+      const session = getAuthSession();
+      if (resolved.requires_auth && !session) {
+        const nextPath = `/g/${slug}${guestCode ? `?code=${encodeURIComponent(guestCode)}` : ""}`;
+        router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+        return;
+      }
       const nextMatch = await createGuestMatch({
         slug,
         guestCode: guestCode.trim().toUpperCase() || undefined,
@@ -82,7 +88,13 @@ export default function GuestUploadPage() {
       setQueryId(nextMatch.query_id);
       setMatch(nextMatch);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not submit selfie");
+      const message = err instanceof Error ? err.message : "Could not submit selfie";
+      if (/sign in|authentication required/i.test(message)) {
+        const nextPath = `/g/${slug}${guestCode ? `?code=${encodeURIComponent(guestCode)}` : ""}`;
+        router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+        return;
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }

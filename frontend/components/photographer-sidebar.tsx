@@ -34,7 +34,7 @@ export default function PhotographerSidebar() {
                         </div>
                         <div className="flex flex-col">
                             <h1 className="text-sm font-bold text-slate-900 leading-tight">GrabPic Studio</h1>
-                            <p className="text-xs text-slate-500">Photographer</p>
+                            <p className="text-xs text-slate-500">{(auth.user?.role || "PHOTOGRAPHER").replace("_", " ")}</p>
                         </div>
                     </div>
 
@@ -82,7 +82,7 @@ export default function PhotographerSidebar() {
                         </div>
                         <div className="flex flex-col min-w-0">
                             <p className="text-xs font-semibold text-slate-900 truncate">{email}</p>
-                            <p className="text-[10px] text-slate-500">Photographer</p>
+                            <p className="text-[10px] text-slate-500">{(auth.user?.role || "PHOTOGRAPHER").replace("_", " ")}</p>
                         </div>
                     </div>
                     <button

@@ -28,7 +28,9 @@ export default function AdminSidebar() {
                         </div>
                         <div className="flex flex-col">
                             <h1 className="text-slate-900 text-base font-bold leading-tight tracking-tight">GrabPic Admin</h1>
-                            <p className="text-slate-500 text-xs font-medium">Super Admin Console</p>
+                            <p className="text-slate-500 text-xs font-medium">
+                                {auth.user?.role === "SUPER_ADMIN" ? "Super Admin Console" : "Admin Console"}
+                            </p>
                         </div>
                     </div>
 
@@ -68,7 +70,7 @@ export default function AdminSidebar() {
                         </div>
                         <div className="flex flex-col min-w-0">
                             <p className="text-slate-900 text-xs font-semibold truncate">{auth.user?.email ?? "Admin"}</p>
-                            <p className="text-slate-500 text-xs">Super Admin</p>
+                            <p className="text-slate-500 text-xs">{(auth.user?.role || "ADMIN").replace("_", " ")}</p>
                         </div>
                     </div>
                     <button
