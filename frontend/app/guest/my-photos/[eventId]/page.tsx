@@ -44,7 +44,7 @@ function LightboxViewer({
           </a>
           <button
             onClick={onClose}
-            className="group flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-red-500/80 transition-colors backdrop-blur-md"
+            className="group flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-blue-600 transition-colors backdrop-blur-md"
           >
             <span className="material-symbols-outlined text-white text-[24px] group-hover:rotate-90 transition-transform duration-300">close</span>
           </button>
