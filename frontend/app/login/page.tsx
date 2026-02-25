@@ -6,16 +6,13 @@ import Script from "next/script";
 import { useRouter } from "next/navigation";
 
 import type { AuthLoginResponse, Role } from "@/lib/api";
-import { loginGoogle, loginLocal } from "@/lib/api";
+import { loginGoogle, loginLocal, signupLocal } from "@/lib/api";
 import { roleHomePath, setAuthSession } from "@/lib/auth-session";
 
 const DEMO_USERS = [
   "superadmin@grabpic.com",
-  "admin1@grabpic.com",
   "studio1@grabpic.com",
   "studio2@grabpic.com",
-  "guest1@grabpic.com",
-  "guest2@grabpic.com",
 ];
 
 type GoogleCredentialResponse = { credential?: string };
@@ -52,6 +49,8 @@ export default function LoginPage() {
   const googleMountRef = useRef<HTMLDivElement | null>(null);
   const googleInitializedRef = useRef(false);
 
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("studio1@grabpic.com");
   const [password, setPassword] = useState("password123");
   const [loading, setLoading] = useState(false);
@@ -86,11 +85,14 @@ export default function LoginPage() {
     setError("");
     setSuccess("");
     try {
-      const result = await loginLocal({ email: email.trim(), password });
+      const result =
+        mode === "signup"
+          ? await signupLocal({ email: email.trim(), password, name: name.trim() || undefined })
+          : await loginLocal({ email: email.trim(), password });
       completeLogin(result);
-      setSuccess(`Logged in as ${result.role}. Redirecting...`);
+      setSuccess(mode === "signup" ? "Account created. Redirecting..." : `Logged in as ${result.role}. Redirecting...`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : mode === "signup" ? "Sign up failed" : "Login failed");
     } finally {
       setLoading(false);
     }
@@ -118,10 +120,11 @@ export default function LoginPage() {
           loginGoogle({ id_token: credential })
             .then((result) => {
               completeLogin(result);
-              setSuccess(`Logged in as ${result.role}. Redirecting...`);
+              setSuccess("Google account verified. Redirecting...");
             })
             .catch((err) => {
-              setError(err instanceof Error ? err.message : "Google sign-in failed");
+              const message = err instanceof Error ? err.message : "Google sign-in failed";
+              setError(message);
             })
             .finally(() => {
               setGoogleLoading(false);
@@ -151,6 +154,8 @@ export default function LoginPage() {
     return () => observer.disconnect();
   }, [googleClientId, googleScriptReady]);
 
+  const isSignUp = mode === "signup";
+
   return (
     <main className="min-h-screen bg-[radial-gradient(1100px_480px_at_0%_0%,rgba(72,72,229,0.14),transparent_60%),radial-gradient(900px_420px_at_100%_0%,rgba(72,72,229,0.1),transparent_58%),#f8fafc]">
       <Script
@@ -166,26 +171,56 @@ export default function LoginPage() {
             <p className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-white/90">
               Secure Access
             </p>
-            <h1 className="mt-5 font-display text-4xl font-bold tracking-tight">Welcome to GrabPic Admin</h1>
+            <h1 className="mt-5 font-display text-4xl font-bold tracking-tight">Welcome to GrabPic</h1>
             <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-200">
-              Manage events, monitor processing, and control user access from one professional dashboard.
+              Start as a guest, scan an event QR, and upgrade to photographer whenever you are ready to create events.
             </p>
           </div>
           <div className="relative grid gap-3 text-sm text-slate-100">
-            <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3">Fast event operations and monitoring</div>
-            <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3">Role-based access with secure sessions</div>
-            <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3">Google and local login support</div>
+            <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3">Guest-first onboarding</div>
+            <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3">One-click Google onboarding for first-time users</div>
+            <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3">Switch between guest and photographer experience</div>
           </div>
         </section>
 
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
           <div className="mb-6">
-            <h2 className="font-display text-3xl font-semibold tracking-tight text-slate-900">Sign In</h2>
-            <p className="mt-2 text-sm text-slate-500">Use your credentials or continue with Google.</p>
+            <div className="mb-4 inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1 text-sm">
+              <button
+                type="button"
+                onClick={() => setMode("signin")}
+                className={`rounded-lg px-4 py-1.5 font-semibold transition-colors ${!isSignUp ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("signup")}
+                className={`rounded-lg px-4 py-1.5 font-semibold transition-colors ${isSignUp ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Sign Up
+              </button>
+            </div>
+            <h2 className="font-display text-3xl font-semibold tracking-tight text-slate-900">{isSignUp ? "Create Account" : "Sign In"}</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              {isSignUp ? "First-time users start as guest by default." : "Use your credentials or continue with Google."}
+            </p>
             {redirectPath ? <p className="mt-1 text-xs text-slate-500">After sign in, you will return to {redirectPath}</p> : null}
           </div>
 
           <form className="grid gap-4" onSubmit={onSubmit}>
+            {isSignUp ? (
+              <label className="text-sm font-medium text-slate-700">
+                Full Name
+                <input
+                  className="field mt-1.5"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your name"
+                />
+              </label>
+            ) : null}
             <label className="text-sm font-medium text-slate-700">
               Email
               <input
@@ -203,11 +238,12 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                minLength={isSignUp ? 8 : 4}
                 required
               />
             </label>
             <button className="btn btn-primary mt-1 h-11 w-full rounded-xl" type="submit" disabled={loading}>
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? (isSignUp ? "Creating account..." : "Signing in...") : (isSignUp ? "Create account" : "Sign in")}
             </button>
           </form>
 
@@ -222,26 +258,29 @@ export default function LoginPage() {
             {googleClientId ? (
               <div className="mt-3 w-full min-h-[44px]" ref={googleMountRef} />
             ) : (
-              <p className="mt-2 text-xs text-amber-700">Set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` to enable Google sign-in.</p>
+              <p className="mt-2 text-xs text-amber-700">Set NEXT_PUBLIC_GOOGLE_CLIENT_ID to enable Google sign-in.</p>
             )}
+            <p className="mt-2 text-xs text-slate-500">First-time Google users are created automatically. No manual pre-signup needed.</p>
             {googleLoading ? <p className="mt-2 text-xs text-slate-500">Verifying Google account...</p> : null}
           </div>
 
-          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Quick Fill Users</p>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {DEMO_USERS.map((userEmail) => (
-                <button
-                  key={userEmail}
-                  type="button"
-                  onClick={() => setEmail(userEmail)}
-                  className="truncate rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:border-primary/40 hover:text-primary"
-                >
-                  {userEmail}
-                </button>
-              ))}
+          {!isSignUp ? (
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Quick Fill Users</p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {DEMO_USERS.map((userEmail) => (
+                  <button
+                    key={userEmail}
+                    type="button"
+                    onClick={() => setEmail(userEmail)}
+                    className="truncate rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:border-primary/40 hover:text-primary"
+                  >
+                    {userEmail}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {error ? <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
           {success ? <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p> : null}
@@ -250,8 +289,8 @@ export default function LoginPage() {
             <Link href="/" className="btn btn-secondary !rounded-xl !justify-center">
               Back to Home
             </Link>
-            <Link href="/photographer/events" className="btn btn-secondary !rounded-xl !justify-center">
-              Photographer Area
+            <Link href="/guest" className="btn btn-secondary !rounded-xl !justify-center">
+              Guest Area
             </Link>
           </div>
         </section>

@@ -120,6 +120,12 @@ class AuthLoginRequest(BaseModel):
     password: str = Field(min_length=4, max_length=120)
 
 
+class AuthSignupRequest(BaseModel):
+    email: str = Field(min_length=4, max_length=240)
+    password: str = Field(min_length=8, max_length=120)
+    name: str = Field(default="", max_length=160)
+
+
 class AuthLoginResponse(BaseModel):
     user_id: str
     email: str

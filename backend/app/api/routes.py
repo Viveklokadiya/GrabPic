@@ -393,7 +393,7 @@ def resolve_guest_event(payload: GuestResolveRequest, db: Session = Depends(get_
 def join_event_as_guest(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.PHOTOGRAPHER, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> EventMembershipResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     membership = db.execute(
@@ -411,7 +411,7 @@ def join_event_as_guest(
 def join_event_from_link(
     payload: GuestJoinLinkRequest,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.PHOTOGRAPHER, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> EventMembershipResponse:
     event = db.execute(select(Event).where(Event.slug == payload.slug.strip().lower()).limit(1)).scalar_one_or_none()
     if not event:
@@ -449,9 +449,9 @@ async def create_guest_match(
     if event.guest_auth_required:
         if not current_user:
             raise APIException("not_authenticated", "Please sign in to upload selfie for this event", status.HTTP_401_UNAUTHORIZED)
-        if current_user.role not in {Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN}:
+        if current_user.role not in {Role.GUEST, Role.PHOTOGRAPHER, Role.SUPER_ADMIN, Role.ADMIN}:
             raise APIException("forbidden", "This role cannot upload selfie for guest matching", status.HTTP_403_FORBIDDEN)
-        if current_user.role == Role.GUEST:
+        if current_user.role in {Role.GUEST, Role.PHOTOGRAPHER}:
             membership = db.execute(
                 select(EventMembership).where(EventMembership.event_id == event.id, EventMembership.user_id == current_user.user_id).limit(1)
             ).scalar_one_or_none()
@@ -469,7 +469,7 @@ async def create_guest_match(
         event=event,
         payload=payload,
         file_name=selfie.filename or "selfie.jpg",
-        guest_user_id=current_user.user_id if current_user and current_user.role == Role.GUEST else None,
+        guest_user_id=current_user.user_id if current_user and current_user.role in {Role.GUEST, Role.PHOTOGRAPHER} else None,
     )
 
 
@@ -512,8 +512,8 @@ def get_guest_match(
             photo_id=photo.id,
             file_name=photo.file_name,
             thumbnail_url=f"/storage/{photo.thumbnail_path}",
-            web_view_link="",
-            download_url="",
+            web_view_link=photo.web_view_link,
+            download_url=photo.download_url,
             score=float(result.score),
             rank=int(result.rank),
         )
@@ -980,7 +980,7 @@ def photographer_event_photos(
 @router.get("/guest/events", response_model=list[GuestEventListItem])
 def guest_joined_events(
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.PHOTOGRAPHER, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> list[GuestEventListItem]:
     if current_user.role in {Role.SUPER_ADMIN, Role.ADMIN}:
         events = db.execute(select(Event).order_by(Event.created_at.desc()).limit(120)).scalars().all()
@@ -1022,14 +1022,14 @@ def guest_joined_events(
 def guest_event_summary(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.PHOTOGRAPHER, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> GuestEventSummary:
     event = _get_event_or_404(db=db, event_id=event_id)
     membership = db.execute(
         select(EventMembership).where(EventMembership.event_id == event.id, EventMembership.user_id == current_user.user_id).limit(1)
     ).scalar_one_or_none()
     joined = current_user.role in {Role.SUPER_ADMIN, Role.ADMIN} or membership is not None
-    if current_user.role == Role.GUEST and not joined:
+    if current_user.role in {Role.GUEST, Role.PHOTOGRAPHER} and not joined:
         raise APIException("forbidden", "Join this event first", status.HTTP_403_FORBIDDEN)
     return GuestEventSummary(
         event_id=event.id,
@@ -1047,7 +1047,7 @@ async def guest_event_selfie(
     selfie: UploadFile = File(...),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.PHOTOGRAPHER, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> GuestMatchResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
     if event.status != "ready":
@@ -1056,7 +1056,7 @@ async def guest_event_selfie(
             "Event is still processing images. Try again after processing completes.",
             status.HTTP_409_CONFLICT,
         )
-    if event.guest_auth_required and current_user.role == Role.GUEST:
+    if event.guest_auth_required and current_user.role in {Role.GUEST, Role.PHOTOGRAPHER}:
         membership = db.execute(
             select(EventMembership).where(EventMembership.event_id == event.id, EventMembership.user_id == current_user.user_id).limit(1)
         ).scalar_one_or_none()
@@ -1073,7 +1073,7 @@ async def guest_event_selfie(
         event=event,
         payload=payload,
         file_name=selfie.filename or "selfie.jpg",
-        guest_user_id=current_user.user_id if current_user.role == Role.GUEST else None,
+        guest_user_id=current_user.user_id if current_user.role in {Role.GUEST, Role.PHOTOGRAPHER} else None,
     )
 
 
@@ -1081,10 +1081,10 @@ async def guest_event_selfie(
 def guest_my_photos(
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_role([Role.GUEST, Role.SUPER_ADMIN, Role.ADMIN])),
+    current_user: AppUser = Depends(require_role([Role.GUEST, Role.PHOTOGRAPHER, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> GuestMyPhotosResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
-    if current_user.role == Role.GUEST:
+    if current_user.role in {Role.GUEST, Role.PHOTOGRAPHER}:
         membership = db.execute(
             select(EventMembership).where(EventMembership.event_id == event.id, EventMembership.user_id == current_user.user_id).limit(1)
         ).scalar_one_or_none()

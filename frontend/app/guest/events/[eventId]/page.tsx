@@ -3,12 +3,20 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+
 import GuestMatchStatusCard from "@/components/guest-match-status";
 import type { GuestEventSummary, GuestMatchResponse } from "@/lib/api";
-import { isPollingStatus } from "@/lib/guest-match-state";
+import { hasResults, isPollingStatus } from "@/lib/guest-match-state";
 import { getGuestEvent, getGuestMatch, submitGuestSelfie } from "@/lib/rbac-api";
 
-function GuestHeader({ eventName }: { eventName?: string }) {
+const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
+const backendBase = apiBase.replace(/\/api\/v1$/, "");
+
+function imageSrc(url: string): string {
+  return url.startsWith("http") ? url : `${backendBase}${url}`;
+}
+
+function GuestHeader() {
   return (
     <header className="flex items-center justify-between whitespace-nowrap border-b border-slate-200 bg-white px-6 py-4">
       <div className="flex items-center gap-3">
@@ -44,6 +52,14 @@ export default function GuestEventPage() {
   const [error, setError] = useState("");
   const pollingInFlightRef = useRef(false);
   const polling = isPollingStatus(match?.status);
+  const showInlineResults = hasResults(match);
+
+  useEffect(() => {
+    if (!preview) return;
+    return () => {
+      URL.revokeObjectURL(preview);
+    };
+  }, [preview]);
 
   async function loadEvent() {
     if (!eventId) return;
@@ -58,32 +74,44 @@ export default function GuestEventPage() {
     }
   }
 
-  useEffect(() => { void loadEvent(); }, [eventId]);
+  useEffect(() => {
+    void loadEvent();
+  }, [eventId]);
 
   useEffect(() => {
-    const queryId = match?.query_id;
-    if (typeof queryId !== "string" || !queryId) return;
+    const queryId = String(match?.query_id || "").trim();
+    if (!queryId) return;
     if (!isPollingStatus(match?.status)) return;
     let canceled = false;
+
     async function tick() {
       if (pollingInFlightRef.current) return;
       pollingInFlightRef.current = true;
       try {
-        const next = await getGuestMatch(queryId!);
+        const next = await getGuestMatch(queryId);
         if (canceled) return;
         setMatch(next);
-      } catch { /* retry on next tick */ }
-      finally { pollingInFlightRef.current = false; }
+      } catch {
+        // retry on next tick
+      } finally {
+        pollingInFlightRef.current = false;
+      }
     }
+
     void tick();
     const interval = window.setInterval(() => void tick(), 2000);
-    return () => { canceled = true; window.clearInterval(interval); };
+    return () => {
+      canceled = true;
+      window.clearInterval(interval);
+    };
   }, [match?.query_id, match?.status]);
 
-  function handleFile(f: File | null) {
-    setFile(f);
-    if (f) setPreview(URL.createObjectURL(f));
-    else setPreview(null);
+  function handleFile(nextFile: File | null) {
+    setFile(nextFile);
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return nextFile ? URL.createObjectURL(nextFile) : null;
+    });
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -117,9 +145,8 @@ export default function GuestEventPage() {
 
   return (
     <div className="min-h-screen bg-[#f8f6f6] flex flex-col overflow-x-hidden">
-      <GuestHeader eventName={summary?.name} />
+      <GuestHeader />
 
-      {/* Event Hero Banner */}
       <div className="relative h-48 w-full bg-cover bg-center bg-slate-200 flex-shrink-0 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
         <div className="absolute bottom-0 left-0 p-8 w-full">
@@ -132,7 +159,6 @@ export default function GuestEventPage() {
       </div>
 
       <main className="flex-grow flex flex-col items-center justify-start p-6 relative">
-        {/* Decorative blobs */}
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[100px]" />
           <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[100px]" />
@@ -144,23 +170,60 @@ export default function GuestEventPage() {
           </div>
         )}
 
-        {/* Match Status (when submitted) */}
-        {match && (
-          <div className="w-full max-w-[600px] mb-6">
-            <GuestMatchStatusCard
-              match={match}
-              isPolling={polling}
-              openHref={`/guest/my-photos/${eventId}`}
-              openLabel="View My Photos"
-              onRetry={() => { setMatch(null); setFile(null); setFileInputKey((v) => v + 1); setPreview(null); }}
-            />
-          </div>
-        )}
+        {match ? (
+          <>
+            <div className="w-full max-w-[600px] mb-6">
+              <GuestMatchStatusCard
+                match={match}
+                isPolling={polling}
+                onRetry={() => {
+                  setMatch(null);
+                  setFile(null);
+                  setFileInputKey((value) => value + 1);
+                  setPreview((current) => {
+                    if (current) URL.revokeObjectURL(current);
+                    return null;
+                  });
+                }}
+              />
+            </div>
 
-        {/* Card: Upload Selfie */}
-        {!match && (
+            {showInlineResults ? (
+              <section className="w-full max-w-[980px] mb-8">
+                <h2 className="mb-3 text-xl font-bold text-slate-900">Your Matched Photos</h2>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {match.photos.map((photo) => (
+                    <article key={photo.photo_id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={imageSrc(photo.thumbnail_url)} alt={photo.file_name} className="h-48 w-full object-cover" />
+                      <div className="p-3">
+                        <p className="line-clamp-2 text-sm font-semibold text-slate-900">{photo.file_name}</p>
+                        <p className="mt-1 text-xs text-slate-500">Score: {(photo.score * 100).toFixed(1)}%</p>
+                        {photo.web_view_link || photo.download_url ? (
+                          <div className="mt-3 flex gap-2">
+                            {photo.web_view_link ? (
+                              <a href={photo.web_view_link} target="_blank" rel="noreferrer" className="btn btn-secondary text-xs">
+                                Open in Drive
+                              </a>
+                            ) : null}
+                            {photo.download_url ? (
+                              <a href={photo.download_url} target="_blank" rel="noreferrer" className="btn btn-secondary text-xs">
+                                Download
+                              </a>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </>
+        ) : null}
+
+        {!match ? (
           <div className="w-full max-w-[600px] bg-white rounded-2xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-100 overflow-hidden">
-            {/* Welcome text */}
             <div className="p-8 pb-0 text-center">
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Find your memories</h2>
               <p className="text-slate-500 text-base">
@@ -169,13 +232,20 @@ export default function GuestEventPage() {
             </div>
 
             <form onSubmit={onSubmit} className="p-8 flex flex-col gap-6">
-              {/* Drag & Drop Upload Area */}
               <label
-                className={`group relative flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-xl cursor-pointer transition-all
-                  ${dragging ? "border-primary/80 bg-primary-light" : "border-slate-200 bg-slate-50 hover:border-primary/60 hover:bg-primary-light/30"}`}
-                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                className={`group relative flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+                  dragging ? "border-primary/80 bg-primary-light" : "border-slate-200 bg-slate-50 hover:border-primary/60 hover:bg-primary-light/30"
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
                 onDragLeave={() => setDragging(false)}
-                onDrop={(e) => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files?.[0] || null); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  handleFile(e.dataTransfer.files?.[0] || null);
+                }}
               >
                 <input
                   key={fileInputKey}
@@ -191,7 +261,7 @@ export default function GuestEventPage() {
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={preview} alt="Selfie preview" className="w-full h-full object-cover" />
                     </div>
-                    <p className="text-slate-800 font-bold">Looking good! 🎉</p>
+                    <p className="text-slate-800 font-bold">Looking good!</p>
                     <p className="text-slate-400 text-sm">Click to change photo</p>
                   </div>
                 ) : (
@@ -207,13 +277,11 @@ export default function GuestEventPage() {
                 )}
               </label>
 
-              {/* Privacy Note */}
               <div className="flex items-center justify-center gap-2 text-slate-400 text-xs text-center">
                 <span className="material-symbols-outlined text-[16px]">lock</span>
                 <p>Your selfie is used only for search and is not stored permanently.</p>
               </div>
 
-              {/* Submit */}
               <button
                 type="submit"
                 disabled={uploading || !file || polling}
@@ -233,13 +301,12 @@ export default function GuestEventPage() {
               </button>
             </form>
 
-            {/* Processing state preview strip */}
-            {uploading && (
+            {uploading ? (
               <div className="border-t border-slate-100 bg-slate-50 p-6">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className="size-10 rounded-full overflow-hidden border-2 border-white shadow-sm bg-slate-200 flex items-center justify-center">
-                      {preview && <img src={preview} alt="Selfie" className="w-full h-full object-cover" />}
+                      {preview ? <img src={preview} alt="Selfie" className="w-full h-full object-cover" /> : null}
                     </div>
                     <div>
                       <p className="text-sm font-bold text-slate-900">Processing...</p>
@@ -252,12 +319,11 @@ export default function GuestEventPage() {
                   <div className="h-full bg-gradient-to-r from-primary to-primary/60 w-[45%] rounded-full animate-pulse" />
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
-        )}
+        ) : null}
 
-        {/* How It Works */}
-        {!match && (
+        {!match ? (
           <div className="mt-12 w-full max-w-[800px] grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
               { icon: "face", title: "Upload Selfie", desc: "Take a quick selfie or upload one from your gallery." },
@@ -273,11 +339,13 @@ export default function GuestEventPage() {
               </div>
             ))}
           </div>
-        )}
+        ) : null}
       </main>
 
       <footer className="w-full py-6 text-center border-t border-slate-200 mt-auto">
-        <p className="text-slate-400 text-sm">Powered by <span className="font-bold text-primary">GrabPic</span></p>
+        <p className="text-slate-400 text-sm">
+          Powered by <span className="font-bold text-primary">GrabPic</span>
+        </p>
       </footer>
     </div>
   );

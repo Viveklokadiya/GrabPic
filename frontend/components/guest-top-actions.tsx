@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useAuth } from "@/lib/use-auth";
 
 export default function GuestTopActions() {
@@ -7,7 +9,16 @@ export default function GuestTopActions() {
   if (auth.isLoading || !auth.user) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[70] sm:bottom-6 sm:right-6">
+    <div className="fixed bottom-4 right-4 z-[70] flex flex-col gap-2 sm:bottom-6 sm:right-6">
+      {auth.user.role === "PHOTOGRAPHER" ? (
+        <Link
+          href="/photographer"
+          className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-xs font-semibold text-primary shadow-xl shadow-primary/10 transition hover:bg-primary/15"
+        >
+          <span className="material-symbols-outlined text-[16px]">switch_account</span>
+          Photographer Mode
+        </Link>
+      ) : null}
       <button
         type="button"
         onClick={() => void auth.logout?.()}
