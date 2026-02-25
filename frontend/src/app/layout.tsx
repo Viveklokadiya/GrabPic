@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
 import Script from "next/script";
 
+import NavigationLoader from "@/components/navigation-loader";
 import "./globals.css";
 
 const display = Plus_Jakarta_Sans({
@@ -67,6 +68,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   }
 })();`}
         </Script>
+        <NavigationLoader />
         {children}
       </body>
     </html>
