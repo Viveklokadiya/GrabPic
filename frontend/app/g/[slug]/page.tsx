@@ -8,7 +8,7 @@ import GuestMatchStatusCard from "@/components/guest-match-status";
 import { getAuthSession } from "@/lib/auth-session";
 import type { GuestMatchResponse } from "@/lib/api";
 import { createGuestMatch, getGuestMatch, resolveGuestEvent } from "@/lib/api";
-import { isPollingStatus } from "@/lib/guest-match-state";
+import { hasResults, isPollingStatus } from "@/lib/guest-match-state";
 
 type PublicEventInfo = {
   eventId: string;
@@ -24,6 +24,13 @@ function formatSlugLabel(slug: string): string {
     .replace(/[-_]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/\b\w/g, (value) => value.toUpperCase());
+}
+
+const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
+const backendBase = apiBase.replace(/\/api\/v1$/, "");
+
+function imageSrc(url: string): string {
+  return url.startsWith("http") ? url : `${backendBase}${url}`;
 }
 
 export default function GuestUploadPage() {
@@ -49,6 +56,7 @@ export default function GuestUploadPage() {
 
   const pollingInFlightRef = useRef(false);
   const polling = isPollingStatus(match?.status);
+  const showInlineResults = hasResults(match);
   const session = getAuthSession();
 
   useEffect(() => {
@@ -258,24 +266,56 @@ export default function GuestUploadPage() {
         )}
 
         {match && (
-          <div className="w-full max-w-[600px] mb-6">
-            <GuestMatchStatusCard
-              match={match}
-              isPolling={polling}
-              openHref={queryId ? `/g/${eventInfo.slug}/result/${queryId}` : undefined}
-              openLabel="View My Photos"
-              onRetry={() => {
-                setMatch(null);
-                setQueryId("");
-                setFile(null);
-                setFileInputKey((value) => value + 1);
-                setPreview((current) => {
-                  if (current) URL.revokeObjectURL(current);
-                  return null;
-                });
-              }}
-            />
-          </div>
+          <>
+            <div className="w-full max-w-[600px] mb-6">
+              <GuestMatchStatusCard
+                match={match}
+                isPolling={polling}
+                onRetry={() => {
+                  setMatch(null);
+                  setQueryId("");
+                  setFile(null);
+                  setFileInputKey((value) => value + 1);
+                  setPreview((current) => {
+                    if (current) URL.revokeObjectURL(current);
+                    return null;
+                  });
+                }}
+              />
+            </div>
+
+            {showInlineResults && (
+              <section className="w-full max-w-[980px] mb-8">
+                <h2 className="mb-3 text-xl font-bold text-slate-900">Your Matched Photos</h2>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {match.photos.map((photo) => (
+                    <article key={photo.photo_id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={imageSrc(photo.thumbnail_url)} alt={photo.file_name} className="h-48 w-full object-cover" />
+                      <div className="p-3">
+                        <p className="line-clamp-2 text-sm font-semibold text-slate-900">{photo.file_name}</p>
+                        <p className="mt-1 text-xs text-slate-500">Score: {(photo.score * 100).toFixed(1)}%</p>
+                        {(photo.web_view_link || photo.download_url) && (
+                          <div className="mt-3 flex gap-2">
+                            {photo.web_view_link ? (
+                              <a href={photo.web_view_link} target="_blank" rel="noreferrer" className="btn btn-secondary text-xs">
+                                Open in Drive
+                              </a>
+                            ) : null}
+                            {photo.download_url ? (
+                              <a href={photo.download_url} target="_blank" rel="noreferrer" className="btn btn-secondary text-xs">
+                                Download
+                              </a>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
         )}
 
         {!match && (
