@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+
 import type { EventGuestsResponse, EventPhotoSafeResponse, EventProcessingStatusResponse, EventResponse } from "@/lib/api";
 import { backendAssetUrl } from "@/lib/asset-url";
 import {
@@ -32,6 +33,8 @@ export default function PhotographerEventDetailsPage() {
   const params = useParams<{ eventId: string }>();
   const eventId = useMemo(() => String(params?.eventId || ""), [params]);
 
+  const [origin, setOrigin] = useState("");
+  const [copiedKey, setCopiedKey] = useState("");
   const [eventData, setEventData] = useState<EventResponse | null>(null);
   const [photos, setPhotos] = useState<EventPhotoSafeResponse[]>([]);
   const [guests, setGuests] = useState<EventGuestsResponse | null>(null);
@@ -41,6 +44,23 @@ export default function PhotographerEventDetailsPage() {
   const [syncing, setSyncing] = useState(false);
   const [canceling, setCanceling] = useState(false);
   const statusRef = useRef<EventProcessingStatusResponse | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setOrigin(window.location.origin);
+    }
+  }, []);
+
+  async function copyText(text: string, key: string) {
+    if (!text) return;
+    try {
+      await navigator.clipboard?.writeText(text);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey((current) => (current === key ? "" : current)), 1400);
+    } catch (_err) {
+      // ignore clipboard errors
+    }
+  }
 
   async function loadEventMeta() {
     if (!eventId) return;
@@ -86,7 +106,9 @@ export default function PhotographerEventDetailsPage() {
   useEffect(() => {
     if (!eventId) return;
     if (!isActiveStatus(statusData?.status)) return;
-    const timer = setInterval(() => { void refreshStatus(); }, 3000);
+    const timer = setInterval(() => {
+      void refreshStatus();
+    }, 3000);
     return () => clearInterval(timer);
   }, [eventId, statusData?.status]);
 
@@ -115,14 +137,26 @@ export default function PhotographerEventDetailsPage() {
     }
   }
 
-  const inviteUrl = useMemo(() => {
-    if (!eventData?.slug) return "";
-    return `/guest/join?slug=${encodeURIComponent(eventData.slug)}`;
-  }, [eventData?.slug]);
-
   const sc = statusConfig(eventData?.status ?? "");
   const progress = statusData?.progress_percentage ?? 0;
   const guestList = guests?.guests ?? [];
+  const remainingPhotos = Math.max(0, (statusData?.total_photos ?? 0) - (statusData?.processed_photos ?? 0));
+  const etaMinutes = remainingPhotos > 0 ? Math.max(1, Math.ceil(remainingPhotos / 120)) : 0;
+
+  const publicGuestPath = useMemo(() => {
+    if (!eventData?.slug) return "";
+    return `/g/${encodeURIComponent(eventData.slug)}`;
+  }, [eventData?.slug]);
+
+  const publicGuestUrl = useMemo(() => {
+    if (!origin || !publicGuestPath) return "";
+    return `${origin}${publicGuestPath}`;
+  }, [origin, publicGuestPath]);
+
+  const qrImageUrl = useMemo(() => {
+    if (!publicGuestUrl) return "";
+    return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&format=png&data=${encodeURIComponent(publicGuestUrl)}`;
+  }, [publicGuestUrl]);
 
   if (loading) {
     return (
@@ -137,22 +171,31 @@ export default function PhotographerEventDetailsPage() {
 
   return (
     <div className="flex flex-col gap-8 max-w-7xl mx-auto w-full">
-      {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-slate-400">
         <Link href="/photographer/events" className="hover:text-primary transition-colors">Events</Link>
         <span className="material-symbols-outlined text-[14px]">chevron_right</span>
         <span className="text-slate-900 font-medium">{eventData?.name ?? "Event Details"}</span>
       </nav>
 
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold border ${sc.badge}`}>
               <span className={`size-1.5 rounded-full ${sc.dot}`} />
               {sc.label}
             </span>
-            <span className="text-xs text-slate-400">ID: {eventId.slice(0, 8)}</span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-mono text-slate-600">
+              Event ID: {eventId}
+              <button
+                type="button"
+                onClick={() => void copyText(eventId, "event-id")}
+                className="inline-flex items-center rounded px-1 text-primary hover:bg-primary/10"
+                title="Copy Event ID"
+              >
+                <span className="material-symbols-outlined text-[14px]">content_copy</span>
+              </button>
+              {copiedKey === "event-id" ? <span className="text-emerald-600 font-semibold">Copied</span> : null}
+            </span>
           </div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{eventData?.name ?? "—"}</h1>
           <p className="text-slate-500 mt-1 text-sm">/{eventData?.slug}</p>
@@ -179,7 +222,6 @@ export default function PhotographerEventDetailsPage() {
 
       {error ? <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
-      {/* Stats cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {[
           { label: "Total Photos", value: statusData?.total_photos ?? 0, icon: "photo_library", color: "text-indigo-600 bg-indigo-50" },
@@ -196,7 +238,6 @@ export default function PhotographerEventDetailsPage() {
         ))}
       </div>
 
-      {/* Sync Progress */}
       {statusData && (
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
           <div className="flex items-end justify-between mb-4">
@@ -214,20 +255,23 @@ export default function PhotographerEventDetailsPage() {
               style={{ width: `${progress}%`, boxShadow: "0 0 12px rgba(72,72,229,0.4)" }}
             />
           </div>
-          <div className="flex justify-between mt-2 text-xs text-slate-400">
+          <div className="flex flex-wrap justify-between mt-2 gap-2 text-xs text-slate-400">
             <span>
               {statusData.processed_photos} / {statusData.total_photos} photos
               {statusData.failed_photos > 0 && <span className="text-red-500 ml-2">• {statusData.failed_photos} failed</span>}
             </span>
             <span>Updated {new Date(statusData.updated_at).toLocaleTimeString()}</span>
           </div>
+          {isActiveStatus(statusData.status) && remainingPhotos > 0 ? (
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Estimated time to finish processing: about {etaMinutes} minute{etaMinutes > 1 ? "s" : ""}. Share guest link after completion for fastest face match.
+            </p>
+          ) : null}
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Event Details */}
         <div className="lg:col-span-2 flex flex-col gap-5">
-          {/* Drive Info */}
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
             <h2 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[20px]">folder_shared</span>
@@ -249,25 +293,28 @@ export default function PhotographerEventDetailsPage() {
                   </a>
                 ) : <span className="text-slate-400">—</span>}
               </div>
-              {inviteUrl && (
+
+              {publicGuestUrl ? (
                 <div className="mt-3 flex flex-col gap-2">
-                  <span className="text-xs font-semibold text-slate-500">Guest Join URL</span>
+                  <span className="text-xs font-semibold text-slate-500">Public Guest Face Match Link</span>
                   <div className="flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
                     <span className="material-symbols-outlined text-slate-400 text-[16px]">link</span>
-                    <span className="text-xs text-slate-600 flex-1 truncate">{window?.location?.origin}{inviteUrl}</span>
+                    <span className="text-xs text-slate-600 flex-1 truncate">{publicGuestUrl}</span>
                     <button
-                      onClick={() => navigator.clipboard?.writeText(`${window?.location?.origin}${inviteUrl}`)}
+                      type="button"
+                      onClick={() => void copyText(publicGuestUrl, "guest-link")}
                       className="text-primary hover:text-primary/80"
+                      title="Copy Guest Link"
                     >
                       <span className="material-symbols-outlined text-[16px]">content_copy</span>
                     </button>
                   </div>
+                  {copiedKey === "guest-link" ? <p className="text-[11px] text-emerald-700">Guest link copied.</p> : null}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 
-          {/* Photo Gallery preview */}
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-bold text-slate-900 flex items-center gap-2">
@@ -303,7 +350,6 @@ export default function PhotographerEventDetailsPage() {
           </div>
         </div>
 
-        {/* Guest List Sidebar */}
         <div className="flex flex-col gap-5">
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
@@ -347,7 +393,42 @@ export default function PhotographerEventDetailsPage() {
             )}
           </div>
 
-          {/* Quick Links */}
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
+            <h3 className="text-sm font-bold text-slate-700 mb-3">Scanner Share</h3>
+            {!publicGuestUrl ? (
+              <p className="text-xs text-slate-400">Public guest link will appear after event slug is available.</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-center justify-center">
+                  {qrImageUrl ? (
+                    <img src={qrImageUrl} alt="Guest QR" className="h-44 w-44 rounded-lg border border-slate-200 bg-white p-2" />
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-slate-500">Guests can scan this QR and open face match directly without login (for public events).</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void copyText(publicGuestUrl, "guest-link")}
+                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-primary/40 hover:text-primary"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                    Copy Link
+                  </button>
+                  <a
+                    href={qrImageUrl}
+                    download={`grabpic-${eventData?.slug || "event"}-scanner.png`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">download</span>
+                    Download QR
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
             <h3 className="text-sm font-bold text-slate-700 mb-3">Event Pages</h3>
             <div className="flex flex-col gap-2">

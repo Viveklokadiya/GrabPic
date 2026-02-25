@@ -1,9 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useRef, useState } from "react";
+
 import type { GuestEventListItem } from "@/lib/api";
+import { becomePhotographer } from "@/lib/api";
+import { getAuthSession, setAuthSession } from "@/lib/auth-session";
+import { decodeQrCodeFromImage, resolveGuestPathFromScan } from "@/lib/qr-scan";
 import { getGuestEvents, joinGuestEvent } from "@/lib/rbac-api";
+import { useAuth } from "@/lib/use-auth";
 
 function eventStatusBadge(status: string) {
   if (status === "COMPLETED") return "bg-green-50 text-green-600 border-green-100";
@@ -22,12 +28,20 @@ function eventStatusLabel(status: string) {
 }
 
 export default function GuestHomePage() {
+  const router = useRouter();
+  const auth = useAuth();
+
+  const qrInputRef = useRef<HTMLInputElement | null>(null);
   const [eventCode, setEventCode] = useState("");
   const [events, setEvents] = useState<GuestEventListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const [promoting, setPromoting] = useState(false);
+  const [scanningQr, setScanningQr] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+
+  const isPhotographer = auth.user?.role === "PHOTOGRAPHER";
 
   async function loadEvents() {
     setLoading(true);
@@ -41,7 +55,9 @@ export default function GuestHomePage() {
     }
   }
 
-  useEffect(() => { void loadEvents(); }, []);
+  useEffect(() => {
+    void loadEvents();
+  }, []);
 
   async function onJoin(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -58,13 +74,55 @@ export default function GuestHomePage() {
     }
   }
 
-  const filtered = events.filter((e) =>
-    e.name.toLowerCase().includes(search.toLowerCase())
-  );
+  async function onBecomePhotographer() {
+    const session = getAuthSession();
+    if (!session?.token) {
+      router.replace("/login?next=%2Fphotographer%2Fevents%2Fnew");
+      return;
+    }
+
+    setPromoting(true);
+    setError("");
+    try {
+      const me = await becomePhotographer(session.token);
+      setAuthSession({
+        token: session.token,
+        role: me.role,
+        email: me.email,
+        userId: me.user_id,
+        name: me.name || me.email,
+      });
+      router.replace("/photographer/events/new");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to enable photographer access");
+    } finally {
+      setPromoting(false);
+    }
+  }
+
+  async function onUploadQrImage(file: File | null) {
+    if (!file) return;
+    setScanningQr(true);
+    setError("");
+    try {
+      const rawValue = await decodeQrCodeFromImage(file);
+      const path = resolveGuestPathFromScan(rawValue);
+      if (!path) {
+        throw new Error("QR code does not contain a valid guest link.");
+      }
+      router.push(path);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to scan QR image");
+    } finally {
+      setScanningQr(false);
+      if (qrInputRef.current) qrInputRef.current.value = "";
+    }
+  }
+
+  const filtered = events.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="min-h-screen bg-[#f8f9fc] flex flex-col">
-      {/* Header */}
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur-md">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
@@ -74,9 +132,11 @@ export default function GuestHomePage() {
             <h2 className="font-bold text-slate-900 text-lg tracking-tight">Guest Portal</h2>
           </div>
           <div className="flex items-center gap-2">
-            <button className="h-9 w-9 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors">
-              <span className="material-symbols-outlined text-[20px]">notifications</span>
-            </button>
+            {isPhotographer ? (
+              <Link href="/photographer" className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/15 transition-colors">
+                Switch to Photographer
+              </Link>
+            ) : null}
             <Link href="/guest/history" className="h-9 w-9 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors">
               <span className="material-symbols-outlined text-[20px]">account_circle</span>
             </Link>
@@ -85,15 +145,30 @@ export default function GuestHomePage() {
       </header>
 
       <main className="flex-grow max-w-6xl mx-auto w-full px-4 py-10 flex flex-col gap-10">
-        {/* Greeting */}
         <div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">Hello, Guest 👋</h1>
-          <p className="text-slate-500 text-lg">Ready to find your photos? Join an event or check your history.</p>
+          <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">Hello, {isPhotographer ? "Creator" : "Guest"} 👋</h1>
+          <p className="text-slate-500 text-lg">Join events, scan QR links, and open face-match directly.</p>
         </div>
 
-        {/* Join Section */}
+        {!isPhotographer ? (
+          <section className="rounded-2xl border border-primary/20 bg-primary/5 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-primary">Are you a photographer?</p>
+              <p className="text-xs text-slate-600 mt-1">Enable photographer mode and create your own events in one click.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void onBecomePhotographer()}
+              disabled={promoting}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary/90 disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-[18px]">add_photo_alternate</span>
+              {promoting ? "Enabling..." : "I am Photographer - Create Event"}
+            </button>
+          </section>
+        ) : null}
+
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* QR Scanner / Scan Card */}
           <div className="lg:col-span-7">
             <div className="h-full bg-white rounded-3xl p-8 shadow-sm border border-slate-100 relative overflow-hidden group hover:border-primary/40 transition-all duration-300">
               <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
@@ -106,24 +181,35 @@ export default function GuestHomePage() {
                   </div>
                   <h2 className="text-2xl font-bold text-slate-900 mb-2">Scan Event QR Code</h2>
                   <p className="text-slate-500 max-w-sm mb-8">
-                    Use your device&apos;s camera to instantly join an event and start finding your photos with AI.
+                    Scan from camera or upload scanner image. Valid guest scanner opens face match page directly.
                   </p>
                 </div>
+                <input
+                  ref={qrInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => void onUploadQrImage(e.target.files?.[0] || null)}
+                />
                 <div className="flex flex-col sm:flex-row gap-4">
                   <Link href="/guest/join" className="flex-1 flex items-center justify-center gap-3 bg-primary hover:bg-primary/90 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all">
                     <span className="material-symbols-outlined">qr_code_scanner</span>
                     Scan QR Code
                   </Link>
-                  <Link href="/guest/join" className="flex-1 flex items-center justify-center gap-3 bg-white border-2 border-slate-200 hover:border-primary/60 hover:bg-primary-light/30 text-slate-700 py-4 px-6 rounded-xl font-semibold text-lg transition-all">
+                  <button
+                    type="button"
+                    onClick={() => qrInputRef.current?.click()}
+                    disabled={scanningQr}
+                    className="flex-1 flex items-center justify-center gap-3 bg-white border-2 border-slate-200 hover:border-primary/60 hover:bg-primary-light/30 text-slate-700 py-4 px-6 rounded-xl font-semibold text-lg transition-all disabled:opacity-60"
+                  >
                     <span className="material-symbols-outlined">upload_file</span>
-                    Upload Image
-                  </Link>
+                    {scanningQr ? "Scanning..." : "Upload Scanner"}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Manual Code Entry */}
           <div className="lg:col-span-5">
             <div className="h-full bg-slate-900 text-white rounded-3xl p-8 shadow-sm relative overflow-hidden flex flex-col justify-center">
               <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
@@ -133,12 +219,12 @@ export default function GuestHomePage() {
                   <span className="material-symbols-outlined text-primary/80">keyboard</span>
                   <span className="text-sm font-semibold uppercase tracking-wider text-slate-300">Enter Manually</span>
                 </div>
-                <h3 className="text-xl font-bold mb-6">Have an event code?</h3>
+                <h3 className="text-xl font-bold mb-6">Have an event ID?</h3>
                 <form onSubmit={onJoin} className="space-y-4">
                   <div>
                     <input
-                      className="w-full bg-slate-800/50 border border-slate-700 focus:border-primary/80 focus:ring-1 focus:ring-primary/80 rounded-xl px-5 py-4 text-lg text-white placeholder:text-slate-500 font-mono tracking-widest transition-all focus:outline-none"
-                      placeholder="ABC-123"
+                      className="w-full bg-slate-800/50 border border-slate-700 focus:border-primary/80 focus:ring-1 focus:ring-primary/80 rounded-xl px-5 py-4 text-lg text-white placeholder:text-slate-500 font-mono tracking-wide transition-all focus:outline-none"
+                      placeholder="Paste event ID from photographer"
                       value={eventCode}
                       onChange={(e) => setEventCode(e.target.value)}
                       required
@@ -152,14 +238,16 @@ export default function GuestHomePage() {
                     {joining ? "Joining..." : <>Join Event <span className="material-symbols-outlined text-lg">arrow_forward</span></>}
                   </button>
                 </form>
-                {error && <p className="text-primary/60 text-sm mt-3">{error}</p>}
-                <p className="text-slate-400 text-xs mt-4 text-center">Codes are usually 6 characters long.</p>
+                <p className="text-slate-400 text-xs mt-4 text-center">Ask photographer for Event ID or scanner link.</p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Recent Events */}
+        {error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        ) : null}
+
         <section>
           <div className="flex items-end justify-between mb-6 border-b border-slate-200 pb-4">
             <div>
@@ -201,7 +289,7 @@ export default function GuestHomePage() {
             <div className="text-center py-16 rounded-2xl bg-white border border-slate-100">
               <span className="material-symbols-outlined text-5xl text-slate-300 block mb-3">event_note</span>
               <p className="text-slate-500 font-medium">No events joined yet.</p>
-              <p className="text-slate-400 text-sm mt-1">Use the join form above to get started.</p>
+              <p className="text-slate-400 text-sm mt-1">Use event ID or scanner above to get started.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -220,7 +308,8 @@ export default function GuestHomePage() {
                       <span className="material-symbols-outlined text-[14px]">calendar_today</span>
                       <span>{new Date(item.joined_at).toLocaleDateString()}</span>
                     </div>
-                    <div className="flex items-center gap-2 mt-3">
+                    <div className="mt-1 text-[10px] text-slate-400 font-mono">ID: {item.event_id.slice(0, 12)}...</div>
+                    <div className="flex items-center gap-2 mt-2.5">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${eventStatusBadge(item.status)}`}>
                         <span className={`size-1.5 rounded-full mr-1 ${eventStatusDot(item.status)}`} />
                         {eventStatusLabel(item.status)}
@@ -233,7 +322,6 @@ export default function GuestHomePage() {
                 </Link>
               ))}
 
-              {/* Add Event Card */}
               <Link
                 href="/guest/join"
                 className="group bg-white rounded-2xl border-2 border-dashed border-slate-200 hover:border-primary/60 hover:bg-primary-light/30 transition-all p-5 flex flex-col items-center justify-center min-h-[120px] gap-3"

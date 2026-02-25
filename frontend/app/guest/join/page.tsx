@@ -2,20 +2,26 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState, FormEvent } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+
+import { decodeQrCodeFromImage, resolveGuestPathFromScan } from "@/lib/qr-scan";
 import { joinGuestEventFromSlug } from "@/lib/rbac-api";
 
 export default function GuestJoinFromLinkPage() {
   const router = useRouter();
   const params = useSearchParams();
   const slug = useMemo(() => String(params.get("slug") || "").trim().toLowerCase(), [params]);
+
+  const qrInputRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState("");
   const [manualCode, setManualCode] = useState("");
   const [joining, setJoining] = useState(false);
+  const [scanningQr, setScanningQr] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
     let canceled = false;
+
     async function run() {
       try {
         const membership = await joinGuestEventFromSlug(slug);
@@ -26,8 +32,11 @@ export default function GuestJoinFromLinkPage() {
         setError(err instanceof Error ? err.message : "Could not join event from invite link");
       }
     }
+
     void run();
-    return () => { canceled = true; };
+    return () => {
+      canceled = true;
+    };
   }, [router, slug]);
 
   async function onManualJoin(e: FormEvent<HTMLFormElement>) {
@@ -36,13 +45,31 @@ export default function GuestJoinFromLinkPage() {
     setError("");
     const code = manualCode.trim();
     try {
-      // Try joining via slug (works for both event IDs and slugs)
       const membership = await joinGuestEventFromSlug(code);
       router.replace(`/guest/events/${membership.event_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join event. Please check the code and try again.");
     } finally {
       setJoining(false);
+    }
+  }
+
+  async function onUploadQrImage(file: File | null) {
+    if (!file) return;
+    setScanningQr(true);
+    setError("");
+    try {
+      const rawValue = await decodeQrCodeFromImage(file);
+      const path = resolveGuestPathFromScan(rawValue);
+      if (!path) {
+        throw new Error("QR code does not contain a valid guest link.");
+      }
+      router.push(path);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to scan QR image");
+    } finally {
+      setScanningQr(false);
+      if (qrInputRef.current) qrInputRef.current.value = "";
     }
   }
 
@@ -64,25 +91,21 @@ export default function GuestJoinFromLinkPage() {
 
       <main className="flex-grow flex justify-center px-4 py-8 lg:px-40 lg:py-12">
         <div className="w-full max-w-6xl flex flex-col gap-12">
-
-          {/* Auto-redirecting */}
           {slug && !error && (
             <section className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="flex flex-col items-center justify-center p-16 gap-6">
                 <div className="size-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
                 <div className="text-center">
                   <h2 className="text-2xl font-bold text-slate-900 mb-2">Joining Event…</h2>
-                  <p className="text-slate-500">We&apos;re connecting this invite to your account. Just a moment!</p>
+                  <p className="text-slate-500">We are connecting this invite to your account. Just a moment!</p>
                 </div>
               </div>
             </section>
           )}
 
-          {/* Main QR + Code Panel */}
           {(!slug || error) && (
             <section className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="flex flex-col lg:flex-row min-h-[500px]">
-                {/* QR Panel */}
                 <div className="relative lg:w-1/2 bg-slate-900 p-8 flex flex-col justify-between items-center text-center overflow-hidden">
                   <div className="absolute inset-0 bg-gradient-to-b from-slate-900/80 via-transparent to-slate-900/80" />
                   <div className="relative z-10 w-full flex justify-between items-start text-white/80">
@@ -90,11 +113,11 @@ export default function GuestJoinFromLinkPage() {
                       <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                       Live Scanner
                     </div>
-                    <button className="p-2 rounded-full hover:bg-white/10 transition-colors">
+                    <button type="button" className="p-2 rounded-full hover:bg-white/10 transition-colors">
                       <span className="material-symbols-outlined">cameraswitch</span>
                     </button>
                   </div>
-                  {/* QR Viewfinder */}
+
                   <div className="relative z-10 w-64 h-64 border-2 border-white/30 rounded-3xl flex items-center justify-center">
                     <div className="absolute inset-0 border-[3px] border-primary/80 rounded-3xl scale-105 opacity-80 animate-pulse" />
                     <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-white -mt-1 -ml-1 rounded-tl-lg" />
@@ -103,17 +126,29 @@ export default function GuestJoinFromLinkPage() {
                     <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-white -mb-1 -mr-1 rounded-br-lg" />
                     <span className="text-white/70 text-sm font-medium bg-black/50 px-3 py-1 rounded-md backdrop-blur-md">Align QR code here</span>
                   </div>
+
                   <div className="relative z-10 space-y-4 max-w-xs mx-auto">
                     <h3 className="text-white font-bold text-2xl">Scan Event Pass</h3>
-                    <p className="text-slate-300 text-sm">Point your camera at the QR code at the event entrance.</p>
-                    <button className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm transition-all backdrop-blur-md flex items-center justify-center gap-2">
+                    <p className="text-slate-300 text-sm">Point your camera at the QR code shared by photographer.</p>
+                    <input
+                      ref={qrInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => void onUploadQrImage(e.target.files?.[0] || null)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => qrInputRef.current?.click()}
+                      disabled={scanningQr}
+                      className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm transition-all backdrop-blur-md flex items-center justify-center gap-2 disabled:opacity-60"
+                    >
                       <span className="material-symbols-outlined text-[20px]">upload_file</span>
-                      Upload QR Image
+                      {scanningQr ? "Scanning..." : "Upload QR Image"}
                     </button>
                   </div>
                 </div>
 
-                {/* Manual Code */}
                 <div className="lg:w-1/2 p-8 lg:p-16 flex flex-col justify-center bg-white">
                   <div className="max-w-sm mx-auto w-full space-y-8">
                     <div className="space-y-2 text-center lg:text-left">
@@ -122,7 +157,7 @@ export default function GuestJoinFromLinkPage() {
                         Manual Entry
                       </span>
                       <h1 className="text-slate-900 text-3xl lg:text-4xl font-black tracking-tight">Enter Event Code</h1>
-                      <p className="text-slate-500 text-base">Type the code provided by your event host to access your photos.</p>
+                      <p className="text-slate-500 text-base">Type event ID or slug shared by photographer.</p>
                     </div>
                     <form className="space-y-6" onSubmit={onManualJoin}>
                       <div>
@@ -130,8 +165,7 @@ export default function GuestJoinFromLinkPage() {
                         <div className="relative">
                           <input
                             className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 pl-12 text-lg text-slate-900 placeholder:text-slate-400 focus:border-primary/80 focus:bg-white focus:ring-1 focus:ring-primary/80 focus:outline-none transition-all font-mono tracking-widest"
-                            maxLength={8}
-                            placeholder="ABC-123"
+                            placeholder="event-id or slug"
                             value={manualCode}
                             onChange={(e) => setManualCode(e.target.value)}
                             required
@@ -156,7 +190,7 @@ export default function GuestJoinFromLinkPage() {
                     {error && <p className="text-red-500 text-sm text-center">{error}</p>}
                     <div className="pt-6 border-t border-slate-100 text-center">
                       <p className="text-slate-400 text-sm">
-                        Having trouble? <Link href="/" className="text-primary hover:underline font-semibold">Get help</Link>
+                        Need help? <Link href="/" className="text-primary hover:underline font-semibold">Open home page</Link>
                       </p>
                     </div>
                   </div>

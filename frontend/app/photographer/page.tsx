@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { getPhotographerEvents } from "@/lib/rbac-api";
+import { useEffect, useMemo, useState } from "react";
+
 import type { PhotographerEventListItem } from "@/lib/api";
+import { getPhotographerEvents } from "@/lib/rbac-api";
 
 function statusBadge(status: string) {
   const map: Record<string, string> = {
@@ -26,15 +27,29 @@ function statusDot(status: string) {
 }
 
 export default function PhotographerDashboard() {
+  const [origin, setOrigin] = useState("");
   const [events, setEvents] = useState<PhotographerEventListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [copiedKey, setCopiedKey] = useState("");
 
   useEffect(() => {
+    if (typeof window !== "undefined") setOrigin(window.location.origin);
     getPhotographerEvents()
       .then(setEvents)
-      .catch(() => { })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  async function copyText(value: string, key: string) {
+    if (!value) return;
+    try {
+      await navigator.clipboard?.writeText(value);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey((current) => (current === key ? "" : current)), 1400);
+    } catch (_err) {
+      // ignore
+    }
+  }
 
   const total = events.length;
   const active = events.filter((e) => e.status === "RUNNING" || e.status === "QUEUED").length;
@@ -43,14 +58,24 @@ export default function PhotographerDashboard() {
   const totalGuests = events.reduce((s, e) => s + (e.guest_count ?? 0), 0);
 
   const recentEvents = [...events].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5);
+  const latestEvent = recentEvents[0] || null;
+
+  const latestGuestLink = useMemo(() => {
+    if (!origin || !latestEvent?.slug) return "";
+    return `${origin}/g/${encodeURIComponent(latestEvent.slug)}`;
+  }, [origin, latestEvent?.slug]);
+
+  const latestQrUrl = useMemo(() => {
+    if (!latestGuestLink) return "";
+    return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&format=png&data=${encodeURIComponent(latestGuestLink)}`;
+  }, [latestGuestLink]);
 
   return (
     <div className="flex flex-col gap-8 max-w-7xl mx-auto w-full">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Dashboard</h1>
-          <p className="text-slate-500 mt-1 text-sm">Welcome back! Here&apos;s an overview of your studio.</p>
+          <p className="text-slate-500 mt-1 text-sm">Welcome back! Here is an overview of your studio.</p>
         </div>
         <Link
           href="/photographer/events/new"
@@ -61,7 +86,6 @@ export default function PhotographerDashboard() {
         </Link>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {[
           { label: "Total Events", value: loading ? "—" : String(total), icon: "event", color: "bg-indigo-50 text-indigo-600", accent: "from-indigo-500" },
@@ -80,9 +104,7 @@ export default function PhotographerDashboard() {
         ))}
       </div>
 
-      {/* Content grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Events */}
         <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
             <h2 className="font-bold text-slate-900">Recent Events</h2>
@@ -117,6 +139,18 @@ export default function PhotographerDashboard() {
                     <td className="px-6 py-3.5">
                       <p className="font-semibold text-slate-900">{evt.name}</p>
                       <p className="text-xs text-slate-400">{evt.slug}</p>
+                      <div className="mt-1 inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-mono text-slate-600">
+                        {evt.event_id.slice(0, 12)}...
+                        <button
+                          type="button"
+                          onClick={() => void copyText(evt.event_id, evt.event_id)}
+                          className="text-primary hover:text-primary/80"
+                          title="Copy full event ID"
+                        >
+                          <span className="material-symbols-outlined text-[12px]">content_copy</span>
+                        </button>
+                        {copiedKey === evt.event_id ? <span className="text-emerald-700">Copied</span> : null}
+                      </div>
                     </td>
                     <td className="px-6 py-3.5">
                       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusBadge(evt.status)}`}>
@@ -141,8 +175,43 @@ export default function PhotographerDashboard() {
           )}
         </div>
 
-        {/* Quick Actions */}
         <div className="flex flex-col gap-5">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
+            <h2 className="font-bold text-slate-900 mb-4">Latest Event Scanner</h2>
+            {!latestEvent ? (
+              <p className="text-sm text-slate-400">Create an event to generate guest scanner.</p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-slate-800">{latestEvent.name}</p>
+                <p className="text-xs text-slate-500">Guest link opens face match directly: <span className="font-mono">/g/{latestEvent.slug}</span></p>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex justify-center">
+                  {latestQrUrl ? <img src={latestQrUrl} alt="Event QR scanner" className="h-44 w-44 rounded-lg border border-slate-200 bg-white p-2" /> : null}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void copyText(latestGuestLink, "latest-link")}
+                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-primary/40 hover:text-primary"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                    Copy Link
+                  </button>
+                  <a
+                    href={latestQrUrl}
+                    download={`grabpic-${latestEvent.slug}-scanner.png`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">download</span>
+                    Download QR
+                  </a>
+                </div>
+                {copiedKey === "latest-link" ? <p className="text-[11px] text-emerald-700">Guest link copied.</p> : null}
+              </div>
+            )}
+          </div>
+
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
             <h2 className="font-bold text-slate-900 mb-4">Quick Actions</h2>
             <div className="flex flex-col gap-3">
@@ -168,7 +237,6 @@ export default function PhotographerDashboard() {
             </div>
           </div>
 
-          {/* Overview mini stats */}
           <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-primary to-indigo-600 shadow-lg shadow-primary/20 p-6 text-white">
             <h3 className="text-sm font-semibold opacity-80 mb-4">Monthly Overview</h3>
             <div className="grid grid-cols-2 gap-4">

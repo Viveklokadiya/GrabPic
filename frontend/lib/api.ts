@@ -385,3 +385,17 @@ export function logoutCurrentSession(accessToken?: string) {
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   return authFetch<{ ok: boolean }>("/auth/logout", { method: "POST", headers });
 }
+
+
+export function signupLocal(input: { email: string; password: string; name?: string }) {
+  return authFetch<AuthLoginResponse>("/auth/signup", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function becomePhotographer(accessToken?: string) {
+  const headers = new Headers();
+  if (accessToken) headers.set("Authorization", "Bearer " + accessToken);
+  return authFetch<AuthMeResponse>("/auth/become-photographer", { method: "POST", headers });
+}
