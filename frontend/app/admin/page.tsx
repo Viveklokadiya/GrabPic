@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ToastStack, type ToastMessage } from "@/components/toast-stack";
@@ -21,10 +22,10 @@ function getStatusMeta(status: string): StatusMeta {
   }
 }
 
-function StatCard({ label, value, icon, iconBg, iconColor, trend }: {
-  label: string; value: string | number; icon: string; iconBg: string; iconColor: string; trend?: string;
+function StatCard({ label, value, icon, iconBg, iconColor, trend, href }: {
+  label: string; value: string | number; icon: string; iconBg: string; iconColor: string; trend?: string; href?: string;
 }) {
-  return (
+  const card = (
     <article className="group relative flex flex-col justify-between rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-1 hover:shadow-lg">
       <div className="flex items-start justify-between">
         <div className="flex flex-col gap-1">
@@ -45,6 +46,12 @@ function StatCard({ label, value, icon, iconBg, iconColor, trend }: {
       )}
     </article>
   );
+  if (!href) return card;
+  return (
+    <Link href={href} className="block rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+      {card}
+    </Link>
+  );
 }
 
 function canCancel(status: string): boolean {
@@ -52,6 +59,7 @@ function canCancel(status: string): boolean {
 }
 
 export default function AdminDashboardPage() {
+  const router = useRouter();
   const auth = useAuth();
   const [stats, setStats] = useState<GlobalStatsResponse | null>(null);
   const [events, setEvents] = useState<AdminEventStatusItem[]>([]);
@@ -177,10 +185,10 @@ export default function AdminDashboardPage() {
         <>
           {/* Stat Cards */}
           <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 mb-10">
-            <StatCard label="Total Users" value={stats?.users ?? 0} icon="group" iconBg="bg-blue-50" iconColor="text-blue-600" trend="+12%" />
-            <StatCard label="Total Events" value={stats?.events ?? 0} icon="calendar_month" iconBg="bg-indigo-50" iconColor="text-indigo-600" trend="+5%" />
-            <StatCard label="Active Jobs" value={activeJobs} icon="bolt" iconBg="bg-orange-50" iconColor="text-orange-600" />
-            <StatCard label="Completed Today" value={completedToday} icon="photo_library" iconBg="bg-pink-50" iconColor="text-pink-600" trend="+15%" />
+            <StatCard href="/admin/users" label="Total Users" value={stats?.users ?? 0} icon="group" iconBg="bg-blue-50" iconColor="text-blue-600" trend="+12%" />
+            <StatCard href="/admin/events" label="Total Events" value={stats?.events ?? 0} icon="calendar_month" iconBg="bg-indigo-50" iconColor="text-indigo-600" trend="+5%" />
+            <StatCard href="/admin/jobs" label="Active Jobs" value={activeJobs} icon="bolt" iconBg="bg-orange-50" iconColor="text-orange-600" />
+            <StatCard href="/admin/metrics" label="Completed Today" value={completedToday} icon="photo_library" iconBg="bg-pink-50" iconColor="text-pink-600" trend="+15%" />
           </section>
 
           {/* Live Events Table */}
@@ -221,10 +229,14 @@ export default function AdminDashboardPage() {
                     const pct = event.progress_percentage.toFixed(1);
                     const isRunning = event.status === "RUNNING";
                     return (
-                      <tr key={event.event_id} className="group hover:bg-slate-50 transition-colors">
+                      <tr
+                        key={event.event_id}
+                        className="group cursor-pointer hover:bg-slate-50 transition-colors"
+                        onClick={() => router.push(`/admin/events/${event.event_id}`)}
+                      >
                         <td className="px-6 py-4">
                           <div className="flex flex-col">
-                            <span className="font-semibold text-slate-900">{event.event_name}</span>
+                            <span className="font-semibold text-slate-900 group-hover:text-primary transition-colors">{event.event_name}</span>
                             <span className="text-xs text-slate-400 font-mono mt-0.5">#{event.event_id.slice(0, 8)}</span>
                           </div>
                         </td>
@@ -265,16 +277,12 @@ export default function AdminDashboardPage() {
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="inline-flex items-center gap-2">
-                            <Link
-                              href={`/admin/events/${event.event_id}`}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:border-primary hover:text-primary"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                              View
-                            </Link>
                             {canCancel(event.status) ? (
                               <button
-                                onClick={() => void onCancel(event.event_id, event.event_name)}
+                                onClick={(eventClick) => {
+                                  eventClick.stopPropagation();
+                                  void onCancel(event.event_id, event.event_name);
+                                }}
                                 disabled={cancelingId === event.event_id}
                                 className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-all hover:bg-red-100 hover:border-red-300 disabled:opacity-50"
                               >
@@ -284,7 +292,10 @@ export default function AdminDashboardPage() {
                             ) : null}
                             {canDelete ? (
                               <button
-                                onClick={() => requestDelete(event.event_id, event.event_name)}
+                                onClick={(eventClick) => {
+                                  eventClick.stopPropagation();
+                                  requestDelete(event.event_id, event.event_name);
+                                }}
                                 disabled={deletingId === event.event_id}
                                 className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-all hover:bg-red-100 hover:border-red-300 disabled:opacity-50"
                               >
