@@ -62,6 +62,12 @@ export function cancelAdminEvent(eventId: string) {
   });
 }
 
+export function deleteEvent(eventId: string) {
+  return apiFetch<{ deleted: boolean }>(`/events/${encodeURIComponent(eventId)}`, {
+    method: "DELETE",
+  });
+}
+
 export function getPhotographerEvents() {
   return apiFetch<PhotographerEventListItem[]>("/photographer/events");
 }
