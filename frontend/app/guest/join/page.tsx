@@ -50,7 +50,7 @@ export default function GuestJoinFromLinkPage() {
     <div className="min-h-screen bg-[#f6f6f8] antialiased flex flex-col">
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4 lg:px-10">
         <div className="flex items-center gap-4 text-slate-900">
-          <div className="size-8 text-rose-500">
+          <div className="size-8 text-blue-500">
             <svg className="w-full h-full" fill="none" viewBox="0 0 48 48">
               <path d="M8.57829 8.57829C5.52816 11.6284 3.451 15.5145 2.60947 19.7452C1.76794 23.9758 2.19984 28.361 3.85056 32.3462C5.50128 36.3314 8.29667 39.7376 11.8832 42.134C15.4698 44.5305 19.6865 45.8096 24 45.8096C28.3135 45.8096 32.5302 44.5305 36.1168 42.134C39.7033 39.7375 42.4987 36.3314 44.1494 32.3462C45.8002 28.361 46.2321 23.9758 45.3905 19.7452C44.549 15.5145 42.4718 11.6284 39.4217 8.57829L24 24L8.57829 8.57829Z" fill="currentColor" />
             </svg>
@@ -69,7 +69,7 @@ export default function GuestJoinFromLinkPage() {
           {slug && !error && (
             <section className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="flex flex-col items-center justify-center p-16 gap-6">
-                <div className="size-16 border-4 border-rose-100 border-t-rose-500 rounded-full animate-spin" />
+                <div className="size-16 border-4 border-blue-100 border-t-blue-500 rounded-full animate-spin" />
                 <div className="text-center">
                   <h2 className="text-2xl font-bold text-slate-900 mb-2">Joining Event…</h2>
                   <p className="text-slate-500">We&apos;re connecting this invite to your account. Just a moment!</p>
@@ -87,7 +87,7 @@ export default function GuestJoinFromLinkPage() {
                   <div className="absolute inset-0 bg-gradient-to-b from-slate-900/80 via-transparent to-slate-900/80" />
                   <div className="relative z-10 w-full flex justify-between items-start text-white/80">
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/40 backdrop-blur-sm border border-white/10 text-xs font-medium">
-                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                      <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
                       Live Scanner
                     </div>
                     <button className="p-2 rounded-full hover:bg-white/10 transition-colors">
@@ -96,7 +96,7 @@ export default function GuestJoinFromLinkPage() {
                   </div>
                   {/* QR Viewfinder */}
                   <div className="relative z-10 w-64 h-64 border-2 border-white/30 rounded-3xl flex items-center justify-center">
-                    <div className="absolute inset-0 border-[3px] border-rose-400 rounded-3xl scale-105 opacity-80 animate-pulse" />
+                    <div className="absolute inset-0 border-[3px] border-blue-400 rounded-3xl scale-105 opacity-80 animate-pulse" />
                     <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-white -mt-1 -ml-1 rounded-tl-lg" />
                     <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-white -mt-1 -mr-1 rounded-tr-lg" />
                     <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-white -mb-1 -ml-1 rounded-bl-lg" />
@@ -117,7 +117,7 @@ export default function GuestJoinFromLinkPage() {
                 <div className="lg:w-1/2 p-8 lg:p-16 flex flex-col justify-center bg-white">
                   <div className="max-w-sm mx-auto w-full space-y-8">
                     <div className="space-y-2 text-center lg:text-left">
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-500 text-xs font-bold uppercase tracking-wider">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-500 text-xs font-bold uppercase tracking-wider">
                         <span className="material-symbols-outlined text-[14px]">lock_open</span>
                         Manual Entry
                       </span>
@@ -129,7 +129,7 @@ export default function GuestJoinFromLinkPage() {
                         <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">Code</label>
                         <div className="relative">
                           <input
-                            className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 pl-12 text-lg text-slate-900 placeholder:text-slate-400 focus:border-rose-400 focus:bg-white focus:ring-1 focus:ring-rose-400 focus:outline-none transition-all font-mono tracking-widest"
+                            className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 pl-12 text-lg text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-1 focus:ring-blue-400 focus:outline-none transition-all font-mono tracking-widest"
                             maxLength={8}
                             placeholder="ABC-123"
                             value={manualCode}
@@ -144,7 +144,7 @@ export default function GuestJoinFromLinkPage() {
                       <button
                         type="submit"
                         disabled={joining}
-                        className="group w-full py-4 px-6 bg-rose-500 hover:bg-rose-600 text-white text-lg font-bold rounded-xl shadow-lg shadow-rose-500/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-60"
+                        className="group w-full py-4 px-6 bg-blue-500 hover:bg-blue-600 text-white text-lg font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-60"
                       >
                         {joining ? (
                           <><div className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Joining…</>
@@ -156,7 +156,7 @@ export default function GuestJoinFromLinkPage() {
                     {error && <p className="text-red-500 text-sm text-center">{error}</p>}
                     <div className="pt-6 border-t border-slate-100 text-center">
                       <p className="text-slate-400 text-sm">
-                        Having trouble? <Link href="/" className="text-rose-500 hover:underline font-semibold">Get help</Link>
+                        Having trouble? <Link href="/" className="text-blue-500 hover:underline font-semibold">Get help</Link>
                       </p>
                     </div>
                   </div>
