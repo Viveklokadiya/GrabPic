@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ToastStack, type ToastMessage } from "@/components/toast-stack";
 import type { AdminEventOverview } from "@/lib/api";
 import { deleteEvent, getAdminEventsOverview } from "@/lib/rbac-api";
 import { useAuth } from "@/lib/use-auth";
@@ -22,8 +24,19 @@ export default function AdminEventsPage() {
     const [error, setError] = useState("");
     const [search, setSearch] = useState("");
     const [deletingId, setDeletingId] = useState("");
+    const [pendingDelete, setPendingDelete] = useState<{ eventId: string; eventName: string } | null>(null);
+    const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
     const canDelete = auth.user?.role === "SUPER_ADMIN";
+
+    function dismissToast(toastId: string) {
+        setToasts((prev) => prev.filter((toast) => toast.id !== toastId));
+    }
+
+    function showToast(variant: ToastMessage["variant"], title: string, message: string) {
+        const toastId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setToasts((prev) => [...prev, { id: toastId, variant, title, message }]);
+    }
 
     async function load() {
         setLoading(true); setError("");
@@ -32,18 +45,27 @@ export default function AdminEventsPage() {
         finally { setLoading(false); }
     }
 
-    async function onDelete(eventId: string, eventName: string) {
+    function requestDelete(eventId: string, eventName: string) {
         if (!canDelete) return;
-        const ok = window.confirm(`Delete event "${eventName}" permanently? This removes photos, face vectors, guest matches, and jobs.`);
-        if (!ok) return;
+        setPendingDelete({ eventId, eventName });
+    }
 
-        setDeletingId(eventId);
+    async function confirmDelete() {
+        if (!pendingDelete) return;
+
+        setDeletingId(pendingDelete.eventId);
         setError("");
+
         try {
-            await deleteEvent(eventId);
-            setData((prev) => prev.filter((item) => item.event_id !== eventId));
+            await deleteEvent(pendingDelete.eventId);
+            setData((prev) => prev.filter((item) => item.event_id !== pendingDelete.eventId));
+            showToast("success", "Event deleted", `"${pendingDelete.eventName}" was permanently removed.`);
+            setPendingDelete(null);
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to delete event");
+            const message = err instanceof Error ? err.message : "Failed to delete event";
+            setError(message);
+            showToast("error", "Delete failed", message);
+            setPendingDelete(null);
         } finally {
             setDeletingId("");
         }
@@ -127,7 +149,7 @@ export default function AdminEventsPage() {
                                                 </Link>
                                                 {canDelete ? (
                                                     <button
-                                                        onClick={() => void onDelete(ev.event_id, ev.name)}
+                                                        onClick={() => requestDelete(ev.event_id, ev.name)}
                                                         disabled={deletingId === ev.event_id}
                                                         className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
                                                     >
@@ -147,6 +169,22 @@ export default function AdminEventsPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                open={Boolean(pendingDelete)}
+                title="Delete Event Permanently?"
+                description={pendingDelete ? `"${pendingDelete.eventName}" will be deleted with all photos, vectors, jobs, and guest matches.` : ""}
+                confirmLabel="Delete Event"
+                cancelLabel="Keep Event"
+                loading={Boolean(pendingDelete) && deletingId === pendingDelete?.eventId}
+                onCancel={() => {
+                    if (deletingId) return;
+                    setPendingDelete(null);
+                }}
+                onConfirm={() => void confirmDelete()}
+            />
+
+            <ToastStack toasts={toasts} onDismiss={dismissToast} />
         </>
     );
 }

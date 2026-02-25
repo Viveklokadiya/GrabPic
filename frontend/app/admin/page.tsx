@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ToastStack, type ToastMessage } from "@/components/toast-stack";
 import type { AdminEventStatusItem, AdminJobRow, GlobalStatsResponse } from "@/lib/api";
 import { cancelAdminEvent, deleteEvent, getAdminEventsStatus, getAdminJobs, getAdminMetrics } from "@/lib/rbac-api";
 import { useAuth } from "@/lib/use-auth";
@@ -59,6 +61,8 @@ export default function AdminDashboardPage() {
   const [cancelingId, setCancelingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [search, setSearch] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ eventId: string; eventName: string } | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const hasActiveProcessing = useMemo(() => events.some((e) => e.status === "QUEUED" || e.status === "RUNNING"), [events]);
   const activeJobs = useMemo(() => jobs.filter((j) => j.status === "queued" || j.status === "running" || j.status === "cancel_requested").length, [jobs]);
@@ -73,6 +77,15 @@ export default function AdminDashboardPage() {
   );
 
   const canDelete = auth.user?.role === "SUPER_ADMIN";
+
+  function dismissToast(toastId: string) {
+    setToasts((prev) => prev.filter((toast) => toast.id !== toastId));
+  }
+
+  function showToast(variant: ToastMessage["variant"], title: string, message: string) {
+    const toastId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setToasts((prev) => [...prev, { id: toastId, variant, title, message }]);
+  }
 
   async function loadAll(silent = false) {
     if (!silent) setLoading(true);
@@ -96,27 +109,46 @@ export default function AdminDashboardPage() {
     return () => window.clearInterval(t);
   }, [hasActiveProcessing]);
 
-  async function onCancel(eventId: string) {
+  async function onCancel(eventId: string, eventName: string) {
     setCancelingId(eventId);
     setEvents((prev) => prev.map((e) => e.event_id === eventId ? { ...e, status: "CANCELLED" } : e));
-    try { await cancelAdminEvent(eventId); await loadAll(true); }
-    catch (err) { setError(err instanceof Error ? err.message : "Failed to cancel"); }
+    try {
+      await cancelAdminEvent(eventId);
+      showToast("info", "Cancellation requested", `"${eventName}" is being canceled.`);
+      await loadAll(true);
+    }
+    catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to cancel";
+      setError(message);
+      showToast("error", "Cancel failed", message);
+      await loadAll(true);
+    }
     finally { setCancelingId(""); }
   }
 
-  async function onDelete(eventId: string, eventName: string) {
+  function requestDelete(eventId: string, eventName: string) {
     if (!canDelete) return;
-    const ok = window.confirm(`Delete event "${eventName}" permanently? This removes photos, face vectors, guest matches, and jobs.`);
-    if (!ok) return;
+    setPendingDelete({ eventId, eventName });
+  }
 
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+
+    const { eventId, eventName } = pendingDelete;
     setDeletingId(eventId);
     setError("");
+
     try {
       await deleteEvent(eventId);
       setEvents((prev) => prev.filter((e) => e.event_id !== eventId));
+      setPendingDelete(null);
+      showToast("success", "Event deleted", `"${eventName}" was permanently removed.`);
       await loadAll(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete event");
+      const message = err instanceof Error ? err.message : "Failed to delete event";
+      setError(message);
+      showToast("error", "Delete failed", message);
+      setPendingDelete(null);
     } finally {
       setDeletingId("");
     }
@@ -242,7 +274,7 @@ export default function AdminDashboardPage() {
                             </Link>
                             {canCancel(event.status) ? (
                               <button
-                                onClick={() => void onCancel(event.event_id)}
+                                onClick={() => void onCancel(event.event_id, event.event_name)}
                                 disabled={cancelingId === event.event_id}
                                 className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-all hover:bg-red-100 hover:border-red-300 disabled:opacity-50"
                               >
@@ -252,7 +284,7 @@ export default function AdminDashboardPage() {
                             ) : null}
                             {canDelete ? (
                               <button
-                                onClick={() => void onDelete(event.event_id, event.event_name)}
+                                onClick={() => requestDelete(event.event_id, event.event_name)}
                                 disabled={deletingId === event.event_id}
                                 className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-all hover:bg-red-100 hover:border-red-300 disabled:opacity-50"
                               >
@@ -274,6 +306,22 @@ export default function AdminDashboardPage() {
           </section>
         </>
       )}
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Delete Event Permanently?"
+        description={pendingDelete ? `"${pendingDelete.eventName}" will be deleted with all photos, vectors, jobs, and guest matches.` : ""}
+        confirmLabel="Delete Event"
+        cancelLabel="Keep Event"
+        loading={Boolean(pendingDelete) && deletingId === pendingDelete?.eventId}
+        onCancel={() => {
+          if (deletingId) return;
+          setPendingDelete(null);
+        }}
+        onConfirm={() => void confirmDelete()}
+      />
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </>
   );
 }

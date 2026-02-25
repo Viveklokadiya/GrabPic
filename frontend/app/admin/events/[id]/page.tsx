@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ToastStack, type ToastMessage } from "@/components/toast-stack";
 import type { AdminEventOverview } from "@/lib/api";
 import { cancelAdminEvent, deleteEvent, getAdminEventsOverview } from "@/lib/rbac-api";
 import { useAuth } from "@/lib/use-auth";
@@ -24,6 +26,17 @@ export default function AdminEventDetailPage() {
     const [error, setError] = useState("");
     const [canceling, setCanceling] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+    function dismissToast(toastId: string) {
+        setToasts((prev) => prev.filter((toast) => toast.id !== toastId));
+    }
+
+    function showToast(variant: ToastMessage["variant"], title: string, message: string) {
+        const toastId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setToasts((prev) => [...prev, { id: toastId, variant, title, message }]);
+    }
 
     useEffect(() => {
         async function load() {
@@ -42,23 +55,40 @@ export default function AdminEventDetailPage() {
     async function handleCancel() {
         if (!event) return;
         setCanceling(true);
-        try { await cancelAdminEvent(event.event_id); router.refresh(); }
-        catch (err) { setError(err instanceof Error ? err.message : "Failed to cancel"); }
+        try {
+            await cancelAdminEvent(event.event_id);
+            showToast("info", "Cancellation requested", `"${event.name}" is being canceled.`);
+            router.refresh();
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : "Failed to cancel";
+            setError(message);
+            showToast("error", "Cancel failed", message);
+        }
         finally { setCanceling(false); }
     }
 
-    async function handleDelete() {
+    function requestDelete() {
         if (!event || auth.user?.role !== "SUPER_ADMIN") return;
-        const ok = window.confirm(`Delete event "${event.name}" permanently? This removes photos, face vectors, guest matches, and jobs.`);
-        if (!ok) return;
+        setDeleteDialogOpen(true);
+    }
+
+    async function confirmDelete() {
+        if (!event || auth.user?.role !== "SUPER_ADMIN") return;
 
         setDeleting(true);
         setError("");
         try {
             await deleteEvent(event.event_id);
-            router.push("/admin/events");
+            showToast("success", "Event deleted", `"${event.name}" was permanently removed.`);
+            setDeleteDialogOpen(false);
+            window.setTimeout(() => router.push("/admin/events"), 450);
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to delete event");
+            const message = err instanceof Error ? err.message : "Failed to delete event";
+            setError(message);
+            showToast("error", "Delete failed", message);
+            setDeleteDialogOpen(false);
+        } finally {
             setDeleting(false);
         }
     }
@@ -69,9 +99,10 @@ export default function AdminEventDetailPage() {
         </div>
     );
 
-    if (error || !event) return (
+    if (!event) return (
         <div className="rounded-lg bg-red-50 border border-red-200 px-6 py-4 text-red-700 text-sm">
             {error || "Event not found."}
+            <ToastStack toasts={toasts} onDismiss={dismissToast} />
         </div>
     );
 
@@ -83,6 +114,13 @@ export default function AdminEventDetailPage() {
             <button onClick={() => router.back()} className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-primary transition-colors">
                 <span className="material-symbols-outlined text-[18px]">arrow_back</span> Back to Events
             </button>
+
+            {error && (
+                <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    <span className="material-symbols-outlined mr-1 align-middle text-[16px]">error</span>
+                    {error}
+                </div>
+            )}
 
             <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-slate-200 pb-6">
                 <div>
@@ -97,7 +135,7 @@ export default function AdminEventDetailPage() {
                 </div>
                 <div className="flex gap-2">
                     {auth.user?.role === "SUPER_ADMIN" && (
-                        <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 transition-all disabled:opacity-50">
+                        <button onClick={requestDelete} disabled={deleting} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 transition-all disabled:opacity-50">
                             <span className="material-symbols-outlined text-[18px]">delete_forever</span>
                             {deleting ? "Deleting..." : "Delete Event"}
                         </button>
@@ -224,6 +262,21 @@ export default function AdminEventDetailPage() {
                     )}
                 </div>
             </div>
+
+            <ConfirmDialog
+                open={deleteDialogOpen}
+                title="Delete Event Permanently?"
+                description={`"${event.name}" will be deleted with all photos, vectors, jobs, and guest matches.`}
+                confirmLabel="Delete Event"
+                cancelLabel="Keep Event"
+                loading={deleting}
+                onCancel={() => {
+                    if (!deleting) setDeleteDialogOpen(false);
+                }}
+                onConfirm={() => void confirmDelete()}
+            />
+
+            <ToastStack toasts={toasts} onDismiss={dismissToast} />
         </>
     );
 }
