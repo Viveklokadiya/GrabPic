@@ -29,7 +29,7 @@ function LightboxViewer({
       {/* Header */}
       <header className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-6 py-4 bg-gradient-to-b from-black/80 to-transparent">
         <div className="text-white/90 text-sm font-medium tracking-wide">
-          <span className="text-blue-400 font-bold">{index + 1}</span>
+          <span className="text-primary/80 font-bold">{index + 1}</span>
           <span className="text-white/50"> / </span>
           {photos.length}
         </div>
@@ -38,13 +38,13 @@ function LightboxViewer({
             href={photo.download_url || "#"}
             target="_blank"
             rel="noreferrer"
-            className="group flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-blue-600 transition-colors backdrop-blur-md"
+            className="group flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-primary/90 transition-colors backdrop-blur-md"
           >
             <span className="material-symbols-outlined text-white text-[20px]">download</span>
           </a>
           <button
             onClick={onClose}
-            className="group flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-blue-600 transition-colors backdrop-blur-md"
+            className="group flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-primary/90 transition-colors backdrop-blur-md"
           >
             <span className="material-symbols-outlined text-white text-[24px] group-hover:rotate-90 transition-transform duration-300">close</span>
           </button>
@@ -55,7 +55,7 @@ function LightboxViewer({
       <main className="relative flex-1 flex items-center justify-center w-full h-full overflow-hidden p-4 md:p-16">
         <button
           onClick={onPrev}
-          className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-black/40 hover:bg-blue-600/90 text-white backdrop-blur-md transition-all"
+          className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-black/40 hover:bg-primary/90 text-white backdrop-blur-md transition-all"
         >
           <span className="material-symbols-outlined text-[40px]">chevron_left</span>
         </button>
@@ -71,7 +71,7 @@ function LightboxViewer({
 
         <button
           onClick={onNext}
-          className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-black/40 hover:bg-blue-600/90 text-white backdrop-blur-md transition-all"
+          className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-black/40 hover:bg-primary/90 text-white backdrop-blur-md transition-all"
         >
           <span className="material-symbols-outlined text-[40px]">chevron_right</span>
         </button>
@@ -149,13 +149,13 @@ export default function GuestMyPhotosPage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
               <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-500/10 text-blue-500">
+                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary">
                   <span className="material-symbols-outlined text-xl">favorite</span>
                 </div>
                 <h1 className="text-lg font-medium tracking-tight text-slate-900">Your Event Photos</h1>
               </div>
               <div className="flex items-center gap-4">
-                <Link href={`/guest/events/${eventId}`} className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-blue-500 transition-colors">
+                <Link href={`/guest/events/${eventId}`} className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-primary transition-colors">
                   <span className="material-symbols-outlined text-[20px]">arrow_back</span>
                   Back
                 </Link>
@@ -184,7 +184,7 @@ export default function GuestMyPhotosPage() {
                     </h2>
                     <p className="text-slate-500">
                       {isComplete
-                        ? <>We found <span className="font-semibold text-blue-500">{photos.length} photos</span> of you from the event.</>
+                        ? <>We found <span className="font-semibold text-primary">{photos.length} photos</span> of you from the event.</>
                         : <>{response?.message || "Your selfie is being processed. This page refreshes automatically."}</>}
                     </p>
                   </div>
@@ -199,7 +199,7 @@ export default function GuestMyPhotosPage() {
                       Refresh
                     </button>
                     {photos.length > 0 && (
-                      <button className="flex-1 md:flex-none flex justify-center items-center gap-2 px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-all shadow-sm shadow-blue-500/30">
+                      <button className="flex-1 md:flex-none flex justify-center items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-lg font-medium transition-all shadow-sm shadow-primary/30">
                         <span className="material-symbols-outlined text-[20px]">download</span>
                         Download All
                       </button>
@@ -230,7 +230,7 @@ export default function GuestMyPhotosPage() {
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-medium text-slate-900">Your Moments</h3>
                 <div className="flex gap-2">
-                  <button className="p-2 text-blue-500" title="Grid View">
+                  <button className="p-2 text-primary" title="Grid View">
                     <span className="material-symbols-outlined">grid_view</span>
                   </button>
                 </div>
@@ -260,7 +260,7 @@ export default function GuestMyPhotosPage() {
                         <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                           <button
                             onClick={(e) => { e.stopPropagation(); }}
-                            className="p-2 bg-white/90 hover:bg-white text-slate-700 hover:text-blue-500 rounded-full shadow-sm backdrop-blur-sm transition-all transform hover:scale-105"
+                            className="p-2 bg-white/90 hover:bg-white text-slate-700 hover:text-primary rounded-full shadow-sm backdrop-blur-sm transition-all transform hover:scale-105"
                             title="Download Photo"
                           >
                             <span className="material-symbols-outlined text-[20px] leading-none">download</span>
@@ -278,7 +278,7 @@ export default function GuestMyPhotosPage() {
               <div className="mt-12 flex justify-center pb-8">
                 <button
                   onClick={loadPhotos}
-                  className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 hover:border-blue-400 text-slate-600 hover:text-blue-500 rounded-full font-medium transition-all shadow-sm"
+                  className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 hover:border-primary/80 text-slate-600 hover:text-primary rounded-full font-medium transition-all shadow-sm"
                 >
                   <span>Refresh Photos</span>
                   <span className="material-symbols-outlined text-[20px]">autorenew</span>
@@ -293,7 +293,7 @@ export default function GuestMyPhotosPage() {
               <span className="material-symbols-outlined text-6xl text-slate-200 block mb-4">photo_library</span>
               <p className="text-slate-500 font-semibold text-lg mb-2">No photos found yet</p>
               <p className="text-slate-400 text-sm max-w-sm mx-auto mb-6">{response?.message || "Upload your selfie from the event page to start matching."}</p>
-              <Link href={`/guest/events/${eventId}`} className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-500 text-white font-semibold hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/20">
+              <Link href={`/guest/events/${eventId}`} className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-white font-semibold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20">
                 <span className="material-symbols-outlined text-[18px]">add_a_photo</span>
                 Upload Selfie
               </Link>
@@ -305,8 +305,8 @@ export default function GuestMyPhotosPage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-sm text-slate-500">© 2024 GrabPic Inc. All memories preserved securely.</p>
             <div className="flex gap-6 text-sm">
-              <Link href="/privacy" className="text-slate-500 hover:text-blue-500 transition-colors">Privacy Policy</Link>
-              <Link href="/terms" className="text-slate-500 hover:text-blue-500 transition-colors">Terms of Service</Link>
+              <Link href="/privacy" className="text-slate-500 hover:text-primary transition-colors">Privacy Policy</Link>
+              <Link href="/terms" className="text-slate-500 hover:text-primary transition-colors">Terms of Service</Link>
             </div>
           </div>
         </footer>

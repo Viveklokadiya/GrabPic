@@ -68,7 +68,7 @@ export default function GuestHomePage() {
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur-md">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="size-8 text-blue-500 flex items-center justify-center">
+            <div className="size-8 text-primary flex items-center justify-center">
               <svg className="w-full h-full fill-current" viewBox="0 0 48 48"><path d="M8.57829 8.57829C5.52816 11.6284 3.451 15.5145 2.60947 19.7452C1.76794 23.9758 2.19984 28.361 3.85056 32.3462C5.50128 36.3314 8.29667 39.7376 11.8832 42.134C15.4698 44.5305 19.6865 45.8096 24 45.8096C28.3135 45.8096 32.5302 44.5305 36.1168 42.134C39.7033 39.7375 42.4987 36.3314 44.1494 32.3462C45.8002 28.361 46.2321 23.9758 45.3905 19.7452C44.549 15.5145 42.4718 11.6284 39.4217 8.57829L24 24L8.57829 8.57829Z" /></svg>
             </div>
             <h2 className="font-bold text-slate-900 text-lg tracking-tight">Guest Portal</h2>
@@ -95,13 +95,13 @@ export default function GuestHomePage() {
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* QR Scanner / Scan Card */}
           <div className="lg:col-span-7">
-            <div className="h-full bg-white rounded-3xl p-8 shadow-sm border border-slate-100 relative overflow-hidden group hover:border-blue-200 transition-all duration-300">
+            <div className="h-full bg-white rounded-3xl p-8 shadow-sm border border-slate-100 relative overflow-hidden group hover:border-primary/40 transition-all duration-300">
               <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
-                <span className="material-symbols-outlined text-[180px] text-blue-500 rotate-12">qr_code_scanner</span>
+                <span className="material-symbols-outlined text-[180px] text-primary rotate-12">qr_code_scanner</span>
               </div>
               <div className="relative z-10 flex flex-col h-full justify-between">
                 <div>
-                  <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center mb-6">
+                  <div className="w-12 h-12 rounded-xl bg-primary-light text-primary flex items-center justify-center mb-6">
                     <span className="material-symbols-outlined text-2xl">photo_camera</span>
                   </div>
                   <h2 className="text-2xl font-bold text-slate-900 mb-2">Scan Event QR Code</h2>
@@ -110,11 +110,11 @@ export default function GuestHomePage() {
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <Link href="/guest/join" className="flex-1 flex items-center justify-center gap-3 bg-blue-500 hover:bg-blue-600 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg shadow-blue-500/20 hover:-translate-y-0.5 transition-all">
+                  <Link href="/guest/join" className="flex-1 flex items-center justify-center gap-3 bg-primary hover:bg-primary/90 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all">
                     <span className="material-symbols-outlined">qr_code_scanner</span>
                     Scan QR Code
                   </Link>
-                  <Link href="/guest/join" className="flex-1 flex items-center justify-center gap-3 bg-white border-2 border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 text-slate-700 py-4 px-6 rounded-xl font-semibold text-lg transition-all">
+                  <Link href="/guest/join" className="flex-1 flex items-center justify-center gap-3 bg-white border-2 border-slate-200 hover:border-primary/60 hover:bg-primary-light/30 text-slate-700 py-4 px-6 rounded-xl font-semibold text-lg transition-all">
                     <span className="material-symbols-outlined">upload_file</span>
                     Upload Image
                   </Link>
@@ -127,17 +127,17 @@ export default function GuestHomePage() {
           <div className="lg:col-span-5">
             <div className="h-full bg-slate-900 text-white rounded-3xl p-8 shadow-sm relative overflow-hidden flex flex-col justify-center">
               <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
-              <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-blue-500/20 rounded-full blur-3xl" />
+              <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-primary/20 rounded-full blur-3xl" />
               <div className="relative z-10">
                 <div className="flex items-center gap-3 mb-6 opacity-90">
-                  <span className="material-symbols-outlined text-blue-400">keyboard</span>
+                  <span className="material-symbols-outlined text-primary/80">keyboard</span>
                   <span className="text-sm font-semibold uppercase tracking-wider text-slate-300">Enter Manually</span>
                 </div>
                 <h3 className="text-xl font-bold mb-6">Have an event code?</h3>
                 <form onSubmit={onJoin} className="space-y-4">
                   <div>
                     <input
-                      className="w-full bg-slate-800/50 border border-slate-700 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 rounded-xl px-5 py-4 text-lg text-white placeholder:text-slate-500 font-mono tracking-widest transition-all focus:outline-none"
+                      className="w-full bg-slate-800/50 border border-slate-700 focus:border-primary/80 focus:ring-1 focus:ring-primary/80 rounded-xl px-5 py-4 text-lg text-white placeholder:text-slate-500 font-mono tracking-widest transition-all focus:outline-none"
                       placeholder="ABC-123"
                       value={eventCode}
                       onChange={(e) => setEventCode(e.target.value)}
@@ -152,7 +152,7 @@ export default function GuestHomePage() {
                     {joining ? "Joining..." : <>Join Event <span className="material-symbols-outlined text-lg">arrow_forward</span></>}
                   </button>
                 </form>
-                {error && <p className="text-blue-300 text-sm mt-3">{error}</p>}
+                {error && <p className="text-primary/60 text-sm mt-3">{error}</p>}
                 <p className="text-slate-400 text-xs mt-4 text-center">Codes are usually 6 characters long.</p>
               </div>
             </div>
@@ -164,7 +164,7 @@ export default function GuestHomePage() {
           <div className="flex items-end justify-between mb-6 border-b border-slate-200 pb-4">
             <div>
               <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <span className="material-symbols-outlined text-blue-500">history</span>
+                <span className="material-symbols-outlined text-primary">history</span>
                 My Recent Events
               </h2>
               <p className="text-slate-500 text-sm mt-1">Pick up where you left off</p>
@@ -175,13 +175,13 @@ export default function GuestHomePage() {
                   <span className="material-symbols-outlined text-[18px]">search</span>
                 </span>
                 <input
-                  className="pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  className="pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                   placeholder="Search events..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <Link href="/guest/history" className="text-blue-500 hover:text-blue-600 text-sm font-semibold flex items-center gap-1 transition-colors">
+              <Link href="/guest/history" className="text-primary hover:text-primary/90 text-sm font-semibold flex items-center gap-1 transition-colors">
                 View all <span className="material-symbols-outlined text-[16px]">chevron_right</span>
               </Link>
             </div>
@@ -209,13 +209,13 @@ export default function GuestHomePage() {
                 <Link
                   key={item.event_id}
                   href={`/guest/events/${item.event_id}`}
-                  className="group bg-white rounded-2xl border border-slate-200 hover:border-blue-200 hover:shadow-md transition-all p-5 flex items-center gap-5"
+                  className="group bg-white rounded-2xl border border-slate-200 hover:border-primary/40 hover:shadow-md transition-all p-5 flex items-center gap-5"
                 >
                   <div className="w-20 h-20 rounded-xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
                     <span className="material-symbols-outlined text-3xl text-slate-300">event</span>
                   </div>
                   <div className="flex flex-col min-w-0 flex-grow">
-                    <h4 className="text-slate-900 font-bold text-base truncate group-hover:text-blue-500 transition-colors">{item.name}</h4>
+                    <h4 className="text-slate-900 font-bold text-base truncate group-hover:text-primary transition-colors">{item.name}</h4>
                     <div className="flex items-center gap-2 text-xs text-slate-400 mt-1">
                       <span className="material-symbols-outlined text-[14px]">calendar_today</span>
                       <span>{new Date(item.joined_at).toLocaleDateString()}</span>
@@ -227,7 +227,7 @@ export default function GuestHomePage() {
                       </span>
                     </div>
                   </div>
-                  <div className="flex-shrink-0 text-slate-300 group-hover:text-blue-400 transition-colors">
+                  <div className="flex-shrink-0 text-slate-300 group-hover:text-primary/80 transition-colors">
                     <span className="material-symbols-outlined">chevron_right</span>
                   </div>
                 </Link>
@@ -236,9 +236,9 @@ export default function GuestHomePage() {
               {/* Add Event Card */}
               <Link
                 href="/guest/join"
-                className="group bg-white rounded-2xl border-2 border-dashed border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all p-5 flex flex-col items-center justify-center min-h-[120px] gap-3"
+                className="group bg-white rounded-2xl border-2 border-dashed border-slate-200 hover:border-primary/60 hover:bg-primary-light/30 transition-all p-5 flex flex-col items-center justify-center min-h-[120px] gap-3"
               >
-                <div className="h-12 w-12 rounded-full bg-white shadow-sm flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                <div className="h-12 w-12 rounded-full bg-white shadow-sm flex items-center justify-center text-primary/80 group-hover:scale-110 transition-transform">
                   <span className="material-symbols-outlined text-2xl">add_a_photo</span>
                 </div>
                 <div className="text-center">
@@ -252,7 +252,7 @@ export default function GuestHomePage() {
       </main>
 
       <footer className="border-t border-slate-200 py-6 text-center">
-        <p className="text-slate-400 text-sm">Powered by <span className="font-bold text-blue-500">GrabPic</span></p>
+        <p className="text-slate-400 text-sm">Powered by <span className="font-bold text-primary">GrabPic</span></p>
       </footer>
     </div>
   );

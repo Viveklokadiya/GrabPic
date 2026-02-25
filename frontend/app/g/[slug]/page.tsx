@@ -187,7 +187,7 @@ export default function GuestUploadPage() {
       <div className="min-h-screen bg-[#f8f6f6] flex flex-col">
         <main className="flex-grow flex items-center justify-center">
           <div className="text-center">
-            <div className="size-16 rounded-full border-4 border-blue-100 border-t-blue-500 animate-spin mx-auto mb-4" />
+            <div className="size-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin mx-auto mb-4" />
             <p className="text-slate-500">Loading event...</p>
           </div>
         </main>
@@ -204,7 +204,7 @@ export default function GuestUploadPage() {
           <button
             type="button"
             onClick={() => setResolveSeq((value) => value + 1)}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600 transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
           >
             <span className="material-symbols-outlined text-[16px]">refresh</span>
             Try Again
@@ -218,7 +218,7 @@ export default function GuestUploadPage() {
     <div className="min-h-screen bg-[#f8f6f6] flex flex-col overflow-x-hidden">
       <header className="flex items-center justify-between whitespace-nowrap border-b border-slate-200 bg-white px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="size-8 text-blue-500 flex items-center justify-center">
+          <div className="size-8 text-primary flex items-center justify-center">
             <span className="material-symbols-outlined" style={{ fontSize: 28 }}>camera</span>
           </div>
           <h2 className="text-slate-900 text-xl font-extrabold leading-tight tracking-tight">GrabPic</h2>
@@ -229,7 +229,7 @@ export default function GuestUploadPage() {
           </Link>
           <Link
             href={session ? "/guest" : "/"}
-            className="flex items-center justify-center rounded-xl h-10 px-4 bg-blue-500 hover:bg-blue-600 transition-colors text-white text-sm font-bold shadow-md shadow-blue-500/20"
+            className="flex items-center justify-center rounded-xl h-10 px-4 bg-primary hover:bg-primary/90 transition-colors text-white text-sm font-bold shadow-md shadow-primary/20"
           >
             {session ? "My Events" : "Home"}
           </Link>
@@ -249,8 +249,8 @@ export default function GuestUploadPage() {
 
       <main className="flex-grow flex flex-col items-center justify-start p-6 relative">
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/5 rounded-full blur-[100px]" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-200/10 rounded-full blur-[100px]" />
+          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[100px]" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[100px]" />
         </div>
 
         {resolveError && (
@@ -329,7 +329,7 @@ export default function GuestUploadPage() {
 
             <form onSubmit={onSubmit} className="p-8 flex flex-col gap-6">
               <label
-                className={`group relative flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-xl cursor-pointer transition-all ${dragging ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/30"}`}
+                className={`group relative flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-xl cursor-pointer transition-all ${dragging ? "border-primary/80 bg-primary-light" : "border-slate-200 bg-slate-50 hover:border-primary/60 hover:bg-primary-light/30"}`}
                 onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={(event) => {
@@ -357,7 +357,7 @@ export default function GuestUploadPage() {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-4 transition-transform duration-300 group-hover:scale-105">
-                    <div className="size-16 rounded-full bg-white shadow-sm flex items-center justify-center text-blue-500">
+                    <div className="size-16 rounded-full bg-white shadow-sm flex items-center justify-center text-primary">
                       <span className="material-symbols-outlined text-[32px]">add_a_photo</span>
                     </div>
                     <div className="text-center">
@@ -376,7 +376,7 @@ export default function GuestUploadPage() {
               <button
                 type="submit"
                 disabled={uploading || !file || polling}
-                className="w-full flex items-center justify-center gap-2 py-4 px-6 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-lg shadow-lg shadow-blue-500/20 disabled:opacity-50 transition-all"
+                className="w-full flex items-center justify-center gap-2 py-4 px-6 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-lg shadow-lg shadow-primary/20 disabled:opacity-50 transition-all"
               >
                 {uploading ? (
                   <>
@@ -402,7 +402,7 @@ export default function GuestUploadPage() {
               { icon: "collections_bookmark", title: "Get Your Album", desc: "Open your personalized gallery instantly." },
             ].map((step) => (
               <div key={step.title} className="flex flex-col items-center text-center gap-3 p-4">
-                <div className="size-12 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center mb-2">
+                <div className="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-2">
                   <span className="material-symbols-outlined">{step.icon}</span>
                 </div>
                 <h3 className="text-base font-bold text-slate-900">{step.title}</h3>
@@ -414,7 +414,7 @@ export default function GuestUploadPage() {
       </main>
 
       <footer className="w-full py-6 text-center border-t border-slate-200 mt-auto">
-        <p className="text-slate-400 text-sm">Powered by <span className="font-bold text-blue-500">GrabPic</span></p>
+        <p className="text-slate-400 text-sm">Powered by <span className="font-bold text-primary">GrabPic</span></p>
       </footer>
     </div>
   );
