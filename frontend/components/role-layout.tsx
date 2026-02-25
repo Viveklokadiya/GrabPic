@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
-import { clearAuthSession } from "@/lib/auth-session";
 import { useAuth } from "@/lib/use-auth";
 
 type NavItem = { href: string; label: string };
@@ -19,12 +17,10 @@ export function RoleLayoutShell({
   children: React.ReactNode;
   compactTopNav?: boolean;
 }) {
-  const router = useRouter();
   const auth = useAuth();
 
   function logout() {
-    clearAuthSession();
-    router.replace("/login");
+    void auth.logout?.({ redirectTo: "/" });
   }
 
   return (

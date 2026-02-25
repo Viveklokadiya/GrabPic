@@ -76,7 +76,7 @@ export function useAuth() {
         clearAuthSession();
         setUser(null);
         setToken("");
-        const redirectTo = options?.redirectTo === false ? "" : String(options?.redirectTo || "/login");
+        const redirectTo = options?.redirectTo === false ? "" : String(options?.redirectTo || "/");
         if (redirectTo && typeof window !== "undefined") {
           window.location.assign(redirectTo);
         }
