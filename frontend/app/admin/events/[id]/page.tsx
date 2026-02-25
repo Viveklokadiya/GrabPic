@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type { AdminEventOverview } from "@/lib/api";
-import { getAdminEventsOverview, cancelAdminEvent } from "@/lib/rbac-api";
+import { cancelAdminEvent, deleteEvent, getAdminEventsOverview } from "@/lib/rbac-api";
+import { useAuth } from "@/lib/use-auth";
 
 function statusBadge(status: string) {
     const s = status.toLowerCase();
@@ -17,10 +18,12 @@ function statusBadge(status: string) {
 export default function AdminEventDetailPage() {
     const { id } = useParams<{ id: string }>();
     const router = useRouter();
+    const auth = useAuth();
     const [event, setEvent] = useState<AdminEventOverview | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [canceling, setCanceling] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         async function load() {
@@ -42,6 +45,22 @@ export default function AdminEventDetailPage() {
         try { await cancelAdminEvent(event.event_id); router.refresh(); }
         catch (err) { setError(err instanceof Error ? err.message : "Failed to cancel"); }
         finally { setCanceling(false); }
+    }
+
+    async function handleDelete() {
+        if (!event || auth.user?.role !== "SUPER_ADMIN") return;
+        const ok = window.confirm(`Delete event "${event.name}" permanently? This removes photos, face vectors, guest matches, and jobs.`);
+        if (!ok) return;
+
+        setDeleting(true);
+        setError("");
+        try {
+            await deleteEvent(event.event_id);
+            router.push("/admin/events");
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to delete event");
+            setDeleting(false);
+        }
     }
 
     if (loading) return (
@@ -77,6 +96,12 @@ export default function AdminEventDetailPage() {
                     <p className="text-xs text-slate-400 mt-1">ID: {event.event_id}</p>
                 </div>
                 <div className="flex gap-2">
+                    {auth.user?.role === "SUPER_ADMIN" && (
+                        <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 transition-all disabled:opacity-50">
+                            <span className="material-symbols-outlined text-[18px]">delete_forever</span>
+                            {deleting ? "Deleting..." : "Delete Event"}
+                        </button>
+                    )}
                     {canCancel && (
                         <button onClick={handleCancel} disabled={canceling} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 transition-all disabled:opacity-50">
                             <span className="material-symbols-outlined text-[18px]">cancel</span>

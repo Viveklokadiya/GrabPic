@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { AdminEventOverview } from "@/lib/api";
-import { getAdminEventsOverview } from "@/lib/rbac-api";
+import { deleteEvent, getAdminEventsOverview } from "@/lib/rbac-api";
+import { useAuth } from "@/lib/use-auth";
 
 function statusBadge(status: string) {
     const s = status.toLowerCase();
@@ -15,16 +16,37 @@ function statusBadge(status: string) {
 }
 
 export default function AdminEventsPage() {
+    const auth = useAuth();
     const [data, setData] = useState<AdminEventOverview[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [search, setSearch] = useState("");
+    const [deletingId, setDeletingId] = useState("");
+
+    const canDelete = auth.user?.role === "SUPER_ADMIN";
 
     async function load() {
         setLoading(true); setError("");
         try { const res = await getAdminEventsOverview(100); setData(res.events); }
         catch (err) { setError(err instanceof Error ? err.message : "Failed to load events"); }
         finally { setLoading(false); }
+    }
+
+    async function onDelete(eventId: string, eventName: string) {
+        if (!canDelete) return;
+        const ok = window.confirm(`Delete event "${eventName}" permanently? This removes photos, face vectors, guest matches, and jobs.`);
+        if (!ok) return;
+
+        setDeletingId(eventId);
+        setError("");
+        try {
+            await deleteEvent(eventId);
+            setData((prev) => prev.filter((item) => item.event_id !== eventId));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to delete event");
+        } finally {
+            setDeletingId("");
+        }
     }
 
     useEffect(() => { void load(); }, []);
@@ -99,9 +121,21 @@ export default function AdminEventsPage() {
                                         <td className="px-6 py-4">{ev.counters.guest_queries}</td>
                                         <td className="px-6 py-4 text-xs text-slate-500">{new Date(ev.created_at).toLocaleDateString()}</td>
                                         <td className="px-6 py-4 text-right">
-                                            <Link href={`/admin/events/${ev.event_id}`} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-primary hover:text-primary transition-all shadow-sm">
-                                                <span className="material-symbols-outlined text-[14px]">open_in_new</span> View
-                                            </Link>
+                                            <div className="inline-flex items-center gap-2">
+                                                <Link href={`/admin/events/${ev.event_id}`} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-primary hover:text-primary transition-all shadow-sm">
+                                                    <span className="material-symbols-outlined text-[14px]">open_in_new</span> View
+                                                </Link>
+                                                {canDelete ? (
+                                                    <button
+                                                        onClick={() => void onDelete(ev.event_id, ev.name)}
+                                                        disabled={deletingId === ev.event_id}
+                                                        className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[14px]">delete</span>
+                                                        {deletingId === ev.event_id ? "Deleting..." : "Delete"}
+                                                    </button>
+                                                ) : null}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}

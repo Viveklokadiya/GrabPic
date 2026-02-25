@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { AdminEventStatusItem, AdminJobRow, GlobalStatsResponse } from "@/lib/api";
-import { cancelAdminEvent, getAdminEventsStatus, getAdminJobs, getAdminMetrics } from "@/lib/rbac-api";
+import { cancelAdminEvent, deleteEvent, getAdminEventsStatus, getAdminJobs, getAdminMetrics } from "@/lib/rbac-api";
+import { useAuth } from "@/lib/use-auth";
 
 type StatusMeta = { label: string; dot: string; badge: string };
 
@@ -48,12 +50,14 @@ function canCancel(status: string): boolean {
 }
 
 export default function AdminDashboardPage() {
+  const auth = useAuth();
   const [stats, setStats] = useState<GlobalStatsResponse | null>(null);
   const [events, setEvents] = useState<AdminEventStatusItem[]>([]);
   const [jobs, setJobs] = useState<AdminJobRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [cancelingId, setCancelingId] = useState("");
+  const [deletingId, setDeletingId] = useState("");
   const [search, setSearch] = useState("");
 
   const hasActiveProcessing = useMemo(() => events.some((e) => e.status === "QUEUED" || e.status === "RUNNING"), [events]);
@@ -67,6 +71,8 @@ export default function AdminDashboardPage() {
     search ? events.filter((e) => e.event_name.toLowerCase().includes(search.toLowerCase()) || e.owner_email.toLowerCase().includes(search.toLowerCase())) : events,
     [events, search]
   );
+
+  const canDelete = auth.user?.role === "SUPER_ADMIN";
 
   async function loadAll(silent = false) {
     if (!silent) setLoading(true);
@@ -96,6 +102,24 @@ export default function AdminDashboardPage() {
     try { await cancelAdminEvent(eventId); await loadAll(true); }
     catch (err) { setError(err instanceof Error ? err.message : "Failed to cancel"); }
     finally { setCancelingId(""); }
+  }
+
+  async function onDelete(eventId: string, eventName: string) {
+    if (!canDelete) return;
+    const ok = window.confirm(`Delete event "${eventName}" permanently? This removes photos, face vectors, guest matches, and jobs.`);
+    if (!ok) return;
+
+    setDeletingId(eventId);
+    setError("");
+    try {
+      await deleteEvent(eventId);
+      setEvents((prev) => prev.filter((e) => e.event_id !== eventId));
+      await loadAll(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete event");
+    } finally {
+      setDeletingId("");
+    }
   }
 
   return (
@@ -208,18 +232,38 @@ export default function AdminDashboardPage() {
                           {event.failed_photos > 0 && <span className="text-red-500 ml-1">({event.failed_photos} failed)</span>}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          {canCancel(event.status) ? (
-                            <button
-                              onClick={() => void onCancel(event.event_id)}
-                              disabled={cancelingId === event.event_id}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-all hover:bg-red-100 hover:border-red-300 disabled:opacity-50"
+                          <div className="inline-flex items-center gap-2">
+                            <Link
+                              href={`/admin/events/${event.event_id}`}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:border-primary hover:text-primary"
                             >
-                              <span className="material-symbols-outlined text-[16px]">cancel</span>
-                              {cancelingId === event.event_id ? "Canceling..." : "Cancel"}
-                            </button>
-                          ) : (
-                            <span className="text-xs text-slate-300">—</span>
-                          )}
+                              <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                              View
+                            </Link>
+                            {canCancel(event.status) ? (
+                              <button
+                                onClick={() => void onCancel(event.event_id)}
+                                disabled={cancelingId === event.event_id}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-all hover:bg-red-100 hover:border-red-300 disabled:opacity-50"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">cancel</span>
+                                {cancelingId === event.event_id ? "Canceling..." : "Cancel"}
+                              </button>
+                            ) : null}
+                            {canDelete ? (
+                              <button
+                                onClick={() => void onDelete(event.event_id, event.event_name)}
+                                disabled={deletingId === event.event_id}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-all hover:bg-red-100 hover:border-red-300 disabled:opacity-50"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                                {deletingId === event.event_id ? "Deleting..." : "Delete"}
+                              </button>
+                            ) : null}
+                            {!canCancel(event.status) && !canDelete ? (
+                              <span className="text-xs text-slate-300">—</span>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     );
