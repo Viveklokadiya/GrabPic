@@ -6,7 +6,7 @@ import type { GuestEventListItem } from "@/lib/api";
 import { getGuestEvents } from "@/lib/rbac-api";
 
 function statusBadge(status: string) {
-    if (status === "COMPLETED") return { cls: "bg-blue-50 text-blue-600 border-blue-100", dot: "bg-blue-500", label: "Photos Ready" };
+    if (status === "COMPLETED") return { cls: "bg-primary-light text-primary/90 border-primary/20", dot: "bg-primary", label: "Photos Ready" };
     if (status === "RUNNING") return { cls: "bg-orange-50 text-orange-600 border-orange-100", dot: "bg-orange-500 animate-pulse", label: "Processing" };
     return { cls: "bg-slate-50 text-slate-500 border-slate-200", dot: "bg-slate-400", label: "Archived" };
 }
@@ -38,7 +38,7 @@ export default function GuestHistoryPage() {
                 <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex h-16 items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <div className="size-8 text-blue-600">
+                            <div className="size-8 text-primary/90">
                                 <svg className="w-full h-full fill-current" viewBox="0 0 48 48">
                                     <path d="M24 4C25.7818 14.2173 33.7827 22.2182 44 24C33.7827 25.7818 25.7818 33.7827 24 44C22.2182 33.7827 14.2173 25.7818 4 24C14.2173 22.2182 22.2182 14.2173 24 4Z" />
                                 </svg>
@@ -46,9 +46,9 @@ export default function GuestHistoryPage() {
                             <span className="text-xl font-bold tracking-tight text-slate-900">GrabPic</span>
                         </div>
                         <nav className="hidden md:flex items-center gap-8">
-                            <Link href="/guest" className="text-sm font-medium text-slate-600 hover:text-blue-500 transition-colors">Home</Link>
-                            <Link href="/guest/history" className="text-sm font-medium text-blue-600">My Events</Link>
-                            <Link href="/guest/join" className="text-sm font-medium text-slate-600 hover:text-blue-500 transition-colors">Find Photos</Link>
+                            <Link href="/guest" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Home</Link>
+                            <Link href="/guest/history" className="text-sm font-medium text-primary/90">My Events</Link>
+                            <Link href="/guest/join" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Find Photos</Link>
                         </nav>
                         <div className="flex items-center gap-4">
                             <Link href="/guest" className="p-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
@@ -72,14 +72,14 @@ export default function GuestHistoryPage() {
                                 <span className="material-symbols-outlined text-[20px]">search</span>
                             </span>
                             <input
-                                className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 text-slate-900 placeholder:text-slate-400"
+                                className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-slate-900 placeholder:text-slate-400"
                                 placeholder="Search events..."
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
                             />
                         </div>
                         <select
-                            className="appearance-none pl-4 pr-10 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 text-slate-900 font-medium cursor-pointer"
+                            className="appearance-none pl-4 pr-10 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 text-slate-900 font-medium cursor-pointer"
                             value={sort}
                             onChange={(e) => setSort(e.target.value)}
                         >
@@ -108,7 +108,7 @@ export default function GuestHistoryPage() {
                         {filtered.map((item) => {
                             const badge = statusBadge(item.status);
                             return (
-                                <div key={item.event_id} className="group relative bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-lg hover:border-blue-400/30 transition-all duration-300">
+                                <div key={item.event_id} className="group relative bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-lg hover:border-primary/30 transition-all duration-300">
                                     <div className="relative h-48 w-full overflow-hidden bg-slate-200 flex items-center justify-center">
                                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent z-10" />
                                         <span className="material-symbols-outlined text-6xl text-slate-300">event</span>
@@ -132,7 +132,7 @@ export default function GuestHistoryPage() {
                                             <Link
                                                 href={`/guest/my-photos/${item.event_id}`}
                                                 className={`flex-1 h-10 px-4 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2 ${item.status === "COMPLETED"
-                                                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                                                        ? "bg-primary/90 hover:bg-primary-dark text-white"
                                                         : "bg-slate-100 text-slate-400 cursor-not-allowed pointer-events-none"
                                                     }`}
                                             >
@@ -141,7 +141,7 @@ export default function GuestHistoryPage() {
                                             </Link>
                                             <Link
                                                 href={`/guest/events/${item.event_id}`}
-                                                className="h-10 w-10 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-500 hover:border-blue-200 transition-colors"
+                                                className="h-10 w-10 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-primary-light hover:text-primary hover:border-primary/40 transition-colors"
                                                 title="Open Event"
                                             >
                                                 <span className="material-symbols-outlined text-[20px]">open_in_new</span>
@@ -155,17 +155,17 @@ export default function GuestHistoryPage() {
                         {/* Join New Event Card */}
                         <Link
                             href="/guest/join"
-                            className="group relative flex flex-col items-center justify-center min-h-[380px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 hover:border-blue-400 hover:bg-blue-500/5 transition-all duration-300 cursor-pointer"
+                            className="group relative flex flex-col items-center justify-center min-h-[380px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 hover:border-primary/80 hover:bg-primary/5 transition-all duration-300 cursor-pointer"
                         >
                             <div className="flex flex-col items-center text-center p-8 gap-4">
-                                <div className="size-16 rounded-full bg-white shadow-sm flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform duration-300">
+                                <div className="size-16 rounded-full bg-white shadow-sm flex items-center justify-center text-primary group-hover:scale-110 transition-transform duration-300">
                                     <span className="material-symbols-outlined text-4xl">add_a_photo</span>
                                 </div>
                                 <div className="space-y-1">
                                     <h3 className="text-lg font-bold text-slate-900">Join a new event</h3>
                                     <p className="text-sm text-slate-500">Have an event code or QR?</p>
                                 </div>
-                                <span className="mt-2 text-blue-500 font-semibold text-sm group-hover:underline">Enter code manually</span>
+                                <span className="mt-2 text-primary font-semibold text-sm group-hover:underline">Enter code manually</span>
                             </div>
                         </Link>
                     </div>
