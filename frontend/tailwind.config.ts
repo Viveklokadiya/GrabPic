@@ -1,5 +1,19 @@
 import type { Config } from "tailwindcss";
 
+const brandPalette = {
+  50: "#f2f2ff",
+  100: "#e6e6ff",
+  200: "#ceceff",
+  300: "#ababff",
+  400: "#7c7cf2",
+  500: "#4848e5",
+  600: "#3f3fd4",
+  700: "#3434b3",
+  800: "#2e2e91",
+  900: "#292973",
+  950: "#191949"
+};
+
 const config: Config = {
   content: [
     "./app/**/*.{ts,tsx}",
@@ -10,10 +24,19 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: "#4848e5",
-        "primary-light": "#eef2ff",
-        "primary-dark": "#3730a3",
-        "rose-accent": "#e54885",
+        primary: brandPalette[500],
+        "primary-light": brandPalette[50],
+        "primary-dark": brandPalette[700],
+        "rose-accent": brandPalette[500],
+        blue: brandPalette,
+        indigo: brandPalette,
+        violet: brandPalette,
+        purple: brandPalette,
+        teal: brandPalette,
+        cyan: brandPalette,
+        sky: brandPalette,
+        pink: brandPalette,
+        fuchsia: brandPalette,
       },
       borderRadius: {
         sm: "10px",

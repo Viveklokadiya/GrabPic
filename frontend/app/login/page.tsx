@@ -152,7 +152,7 @@ export default function LoginPage() {
   }, [googleClientId, googleScriptReady]);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(1100px_480px_at_0%_0%,rgba(72,72,229,0.14),transparent_60%),radial-gradient(900px_420px_at_100%_0%,rgba(56,189,248,0.12),transparent_58%),#f8fafc]">
+    <main className="min-h-screen bg-[radial-gradient(1100px_480px_at_0%_0%,rgba(72,72,229,0.14),transparent_60%),radial-gradient(900px_420px_at_100%_0%,rgba(72,72,229,0.1),transparent_58%),#f8fafc]">
       <Script
         src="https://accounts.google.com/gsi/client"
         strategy="afterInteractive"
@@ -161,7 +161,7 @@ export default function LoginPage() {
       />
       <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-12">
         <section className="relative hidden overflow-hidden rounded-3xl border border-slate-700 bg-slate-900 p-10 text-white shadow-2xl lg:flex lg:flex-col lg:justify-between">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_420px_at_20%_10%,rgba(99,102,241,0.45),transparent_62%),radial-gradient(700px_360px_at_90%_80%,rgba(14,165,233,0.28),transparent_60%)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_420px_at_20%_10%,rgba(99,102,241,0.45),transparent_62%),radial-gradient(700px_360px_at_90%_80%,rgba(72,72,229,0.22),transparent_60%)]" />
           <div className="relative">
             <p className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-white/90">
               Secure Access

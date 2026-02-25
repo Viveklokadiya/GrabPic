@@ -17,8 +17,8 @@ export default function GlobalLoadingState() {
 
             {/* Decorative subtle background elements */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute -top-[20%] -left-[10%] w-[60vw] h-[60vw] bg-[#e23653]/5 rounded-full blur-[120px] opacity-60"></div>
-                <div className="absolute top-[40%] -right-[10%] w-[40vw] h-[40vw] bg-rose-200/20 rounded-full blur-[100px] opacity-40"></div>
+                <div className="absolute -top-[20%] -left-[10%] w-[60vw] h-[60vw] bg-[#4848e5]/10 rounded-full blur-[120px] opacity-60"></div>
+                <div className="absolute top-[40%] -right-[10%] w-[40vw] h-[40vw] bg-primary/10 rounded-full blur-[100px] opacity-40"></div>
             </div>
 
             <div className="relative z-10 flex flex-col items-center max-w-md w-full gap-12">
@@ -27,7 +27,7 @@ export default function GlobalLoadingState() {
                     <div className="flex items-center gap-3">
                         {/* Icon Mark */}
                         <div className="relative w-16 h-16 flex items-center justify-center bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                            <span className="material-symbols-outlined text-4xl text-[#e23653]/80">photo_camera_back</span>
+                            <span className="material-symbols-outlined text-4xl text-[#4848e5]/80">photo_camera_back</span>
                             {/* Scanning Light Overlay */}
                             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full" style={{ animation: "shimmer 2s infinite linear" }}></div>
                         </div>
@@ -45,7 +45,7 @@ export default function GlobalLoadingState() {
                 <div className="w-full max-w-[280px] flex flex-col gap-4 items-center">
                     {/* Indeterminate Progress Bar */}
                     <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden relative">
-                        <div className="absolute top-0 left-0 bottom-0 bg-gradient-to-r from-[#e23653]/40 via-[#e23653] to-[#e23653]/40 w-full rounded-full origin-left" style={{ animation: "indeterminate 2s infinite ease-in-out" }}></div>
+                        <div className="absolute top-0 left-0 bottom-0 bg-gradient-to-r from-[#4848e5]/40 via-[#4848e5] to-[#4848e5]/40 w-full rounded-full origin-left" style={{ animation: "indeterminate 2s infinite ease-in-out" }}></div>
                     </div>
 
                     {/* Status Text */}
