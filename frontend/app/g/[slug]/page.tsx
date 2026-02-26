@@ -236,17 +236,8 @@ export default function GuestUploadPage() {
         </div>
       </header>
 
-      <div className="w-full border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-[980px] flex-col gap-2 px-6 py-4">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">
-            <span className="material-symbols-outlined text-[14px]">calendar_month</span>
-            <span>{eventInfo.slug}</span>
-          </div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900">{eventInfo.displayName}</h1>
-        </div>
-      </div>
 
-      <main className="relative flex flex-grow flex-col items-center justify-start px-6 pb-6 pt-4">
+      <main className="relative flex flex-grow flex-col items-center justify-start px-6 pb-6 pt-2">
         <div className="absolute top-0 left-0 h-full w-full overflow-hidden pointer-events-none -z-10">
           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[100px]" />
           <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[100px]" />
@@ -319,9 +310,19 @@ export default function GuestUploadPage() {
 
         {!match && (
           <div className="w-full max-w-[600px] bg-white rounded-2xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-100 overflow-hidden">
-            <div className="p-8 pb-0 text-center">
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">Find your memories</h2>
-              <p className="text-slate-500 text-base">
+            <div className="border-b border-slate-100 px-8 pb-4 pt-6">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Event</p>
+                  <p className="truncate text-lg font-bold text-slate-900">{eventInfo.displayName}</p>
+                </div>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600">
+                  <span className="material-symbols-outlined text-[13px]">calendar_month</span>
+                  {eventInfo.slug}
+                </span>
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900">Find your memories</h2>
+              <p className="mt-2 text-base text-slate-500">
                 Upload a clear selfie to instantly find and collect all your photos from this event.
               </p>
             </div>
