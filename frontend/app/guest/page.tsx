@@ -64,9 +64,9 @@ export default function GuestHomePage() {
     setJoining(true);
     setError("");
     try {
-      await joinGuestEvent(eventCode.trim());
+      const membership = await joinGuestEvent(eventCode.trim());
       setEventCode("");
-      await loadEvents();
+      router.push("/guest/events/" + membership.event_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join event");
     } finally {
@@ -119,7 +119,14 @@ export default function GuestHomePage() {
     }
   }
 
-  const filtered = events.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = events.filter((e) => {
+    const needle = search.toLowerCase();
+    return (
+      e.name.toLowerCase().includes(needle) ||
+      e.slug.toLowerCase().includes(needle) ||
+      e.event_code.toLowerCase().includes(needle)
+    );
+  });
 
   return (
     <div className="min-h-screen bg-[#f8f9fc] flex flex-col">
@@ -224,7 +231,7 @@ export default function GuestHomePage() {
                   <div>
                     <input
                       className="w-full bg-slate-800/50 border border-slate-700 focus:border-primary/80 focus:ring-1 focus:ring-primary/80 rounded-xl px-5 py-4 text-lg text-white placeholder:text-slate-500 font-mono tracking-wide transition-all focus:outline-none"
-                      placeholder="Paste event ID from photographer"
+                      placeholder="Paste 4-digit Event ID"
                       value={eventCode}
                       onChange={(e) => setEventCode(e.target.value)}
                       required
@@ -308,7 +315,7 @@ export default function GuestHomePage() {
                       <span className="material-symbols-outlined text-[14px]">calendar_today</span>
                       <span>{new Date(item.joined_at).toLocaleDateString()}</span>
                     </div>
-                    <div className="mt-1 text-[10px] text-slate-400 font-mono">ID: {item.event_id.slice(0, 12)}...</div>
+                    <div className="mt-1 text-[10px] text-slate-400 font-mono">Event ID: {item.event_code}</div>
                     <div className="flex items-center gap-2 mt-2.5">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${eventStatusBadge(item.status)}`}>
                         <span className={`size-1.5 rounded-full mr-1 ${eventStatusDot(item.status)}`} />

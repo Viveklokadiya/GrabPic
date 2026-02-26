@@ -15,6 +15,26 @@ function statusConfig(status: string) {
   return map[status] ?? { badge: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-400", label: status };
 }
 
+function eventProgress(evt: PhotographerEventListItem): { processed: number; total: number; percent: number } {
+  const processed = Math.max(0, Number(evt.processed_photos ?? evt.photo_count ?? 0));
+  const totalCandidate = Math.max(0, Number(evt.total_photos ?? 0));
+  const total = totalCandidate > 0 ? totalCandidate : Math.max(processed, Number(evt.photo_count ?? 0));
+
+  let percent = Number(evt.progress_percentage ?? 0);
+  if (!(percent > 0) && total > 0) {
+    percent = (processed / total) * 100;
+  }
+  if ((evt.status === "RUNNING" || evt.status === "QUEUED") && percent >= 100) {
+    percent = 99;
+  }
+
+  return {
+    processed,
+    total,
+    percent: Math.max(0, Math.min(100, Math.round(percent))),
+  };
+}
+
 export default function PhotographerEventsPage() {
   const [events, setEvents] = useState<PhotographerEventListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,30 +50,29 @@ export default function PhotographerEventsPage() {
   }, []);
 
   const filtered = events.filter((e) => {
-    const matchSearch = e.name.toLowerCase().includes(search.toLowerCase()) || e.slug.toLowerCase().includes(search.toLowerCase());
+    const needle = search.toLowerCase();
+    const matchSearch = e.name.toLowerCase().includes(needle) || e.slug.toLowerCase().includes(needle) || e.event_code.toLowerCase().includes(needle);
     const matchFilter = filter === "ALL" || e.status === filter;
     return matchSearch && matchFilter;
   });
 
   return (
-    <div className="flex flex-col gap-8 max-w-7xl mx-auto w-full">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">My Events</h1>
-          <p className="text-slate-500 mt-1 text-sm">Manage and monitor all your photo events.</p>
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">My Events</h1>
+          <p className="mt-1 text-sm text-slate-500">Manage and monitor all your photo events.</p>
         </div>
         <Link
           href="/photographer/events/new"
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90"
         >
           <span className="material-symbols-outlined text-[20px]">add</span>
           Create Event
         </Link>
       </div>
 
-      {/* Stats strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {[
           { label: "Total", value: events.length, status: "ALL", icon: "folder" },
           { label: "Active", value: events.filter((e) => e.status === "RUNNING" || e.status === "QUEUED").length, status: "RUNNING", icon: "sync" },
@@ -63,28 +82,22 @@ export default function PhotographerEventsPage() {
           <button
             key={s.status}
             onClick={() => setFilter(filter === s.status ? "ALL" : s.status)}
-            className={`flex flex-col items-start p-4 rounded-xl border transition-all text-left ${filter === s.status
-                ? "border-primary bg-primary/5 shadow-sm"
-                : "border-slate-200 bg-white hover:border-primary/40"
-              }`}
+            className={`flex flex-col items-start rounded-xl border p-4 text-left transition-all ${filter === s.status ? "border-primary bg-primary/5 shadow-sm" : "border-slate-200 bg-white hover:border-primary/40"}`}
           >
-            <span className={`material-symbols-outlined text-[22px] mb-2 ${filter === s.status ? "text-primary" : "text-slate-400"}`}>
-              {s.icon}
-            </span>
+            <span className={`material-symbols-outlined mb-2 text-[22px] ${filter === s.status ? "text-primary" : "text-slate-400"}`}>{s.icon}</span>
             <p className="text-2xl font-bold text-slate-900">{loading ? "—" : s.value}</p>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">{s.label}</p>
+            <p className="mt-0.5 text-xs font-medium text-slate-500">{s.label}</p>
           </button>
         ))}
       </div>
 
-      {/* Toolbar */}
-      <div className="flex flex-col md:flex-row gap-3">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex flex-col gap-3 md:flex-row">
+        <div className="relative max-w-md flex-1">
           <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
             <span className="material-symbols-outlined text-[20px]">search</span>
           </span>
           <input
-            className="w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+            className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
             placeholder="Search events..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -95,10 +108,7 @@ export default function PhotographerEventsPage() {
             <button
               key={f}
               onClick={() => setFilter(f === filter ? "ALL" : f)}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-all ${filter === f
-                  ? "bg-primary text-white border-primary shadow-sm"
-                  : "bg-white text-slate-600 border-slate-200 hover:border-primary/40"
-                }`}
+              className={`rounded-lg border px-4 py-2 text-xs font-semibold transition-all ${filter === f ? "border-primary bg-primary text-white shadow-sm" : "border-slate-200 bg-white text-slate-600 hover:border-primary/40"}`}
             >
               {f === "ALL" ? "All" : f.charAt(0) + f.slice(1).toLowerCase()}
             </button>
@@ -106,75 +116,67 @@ export default function PhotographerEventsPage() {
         </div>
       </div>
 
-      {/* Error */}
-      {error ? (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
-      ) : null}
+      {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
-      {/* Events Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="rounded-xl border border-slate-200 bg-white p-5 animate-pulse">
-              <div className="h-4 bg-slate-200 rounded w-2/3 mb-3" />
-              <div className="h-3 bg-slate-100 rounded w-1/2 mb-6" />
-              <div className="h-2 bg-slate-100 rounded w-full mb-2" />
-              <div className="h-6 bg-slate-100 rounded w-1/3 mt-4" />
+            <div key={i} className="animate-pulse rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-3 h-4 w-2/3 rounded bg-slate-200" />
+              <div className="mb-6 h-3 w-1/2 rounded bg-slate-100" />
+              <div className="mb-2 h-2 w-full rounded bg-slate-100" />
+              <div className="mt-4 h-6 w-1/3 rounded bg-slate-100" />
             </div>
           ))}
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white py-20 text-center">
-          <span className="material-symbols-outlined text-5xl text-slate-300 mb-3 block">event_note</span>
-          <p className="text-slate-500 font-medium">No events found</p>
-          <Link href="/photographer/events/new" className="mt-4 inline-flex items-center gap-1 text-sm text-primary font-semibold hover:underline">
+          <span className="material-symbols-outlined mb-3 block text-5xl text-slate-300">event_note</span>
+          <p className="font-medium text-slate-500">No events found</p>
+          <Link href="/photographer/events/new" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">
             <span className="material-symbols-outlined text-[16px]">add</span> Create your first event
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((evt) => {
             const sc = statusConfig(evt.status);
-            const progress = evt.photo_count > 0 ? Math.min(100, Math.round((evt.photo_count / Math.max(evt.photo_count, 1)) * 100)) : 0;
+            const progress = eventProgress(evt);
             const lastSync = evt.last_sync_at ? new Date(evt.last_sync_at).toLocaleDateString() : "Not started";
+
             return (
-              <article
+              <Link
                 key={evt.event_id}
-                className="group flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-primary/30 transition-all overflow-hidden"
+                href={`/photographer/events/${evt.event_id}`}
+                className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:border-primary/30 hover:shadow-md"
               >
-                {/* Card top accent */}
                 <div className={`h-1 w-full ${sc.dot.replace("animate-pulse", "").trim()} opacity-50`} />
-                <div className="flex flex-col flex-1 p-5">
-                  {/* Status badge */}
-                  <div className="flex items-start justify-between mb-3">
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold border ${sc.badge}`}>
+                <div className="flex flex-1 flex-col p-5">
+                  <div className="mb-3 flex items-start justify-between">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${sc.badge}`}>
                       <span className={`size-1.5 rounded-full ${sc.dot}`} />
                       {sc.label}
                     </span>
-                    <span className="material-symbols-outlined text-slate-300 group-hover:text-primary transition-colors text-[20px]">
-                      arrow_outward
-                    </span>
+                    <span className="material-symbols-outlined text-[20px] text-slate-300 transition-colors group-hover:text-primary">arrow_outward</span>
                   </div>
 
-                  {/* Event name */}
-                  <h3 className="font-bold text-slate-900 mb-1 leading-tight">{evt.name}</h3>
-                  <p className="text-xs text-slate-400 mb-4">/{evt.slug}</p>
+                  <h3 className="mb-1 leading-tight text-slate-900 font-bold">{evt.name}</h3>
+                  <p className="mb-1 text-xs text-slate-400">/{evt.slug}</p>
+                  <p className="mb-4 text-[11px] font-mono text-slate-500">Event ID: {evt.event_code}</p>
 
-                  {/* Progress bar */}
                   <div className="mb-4">
-                    <div className="flex justify-between text-xs text-slate-500 mb-1">
-                      <span>{evt.photo_count} photos processed</span>
-                      <span>{progress}%</span>
+                    <div className="mb-1 flex justify-between text-xs text-slate-500">
+                      <span>{progress.processed} / {progress.total} processed</span>
+                      <span>{progress.percent}%</span>
                     </div>
-                    <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                       <div
-                        className={`h-full rounded-full ${evt.status === "COMPLETED" ? "bg-emerald-500" : "bg-primary"} transition-all`}
-                        style={{ width: `${progress}%` }}
+                        className={`h-full rounded-full transition-all ${evt.status === "COMPLETED" ? "bg-emerald-500" : "bg-primary"}`}
+                        style={{ width: `${progress.percent}%` }}
                       />
                     </div>
                   </div>
 
-                  {/* Stats row */}
                   <div className="mt-auto flex items-center gap-4 text-xs text-slate-500">
                     <span className="flex items-center gap-1">
                       <span className="material-symbols-outlined text-[14px]">group</span>
@@ -186,16 +188,7 @@ export default function PhotographerEventsPage() {
                     </span>
                   </div>
                 </div>
-                <div className="px-5 pb-4">
-                  <Link
-                    href={`/photographer/events/${evt.event_id}`}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/20 bg-primary/5 py-2 text-sm font-semibold text-primary hover:bg-primary hover:text-white transition-all"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">open_in_new</span>
-                    Open Event
-                  </Link>
-                </div>
-              </article>
+              </Link>
             );
           })}
         </div>

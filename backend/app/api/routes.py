@@ -129,6 +129,7 @@ def create_event(
     guest_url = ""
     return EventCreateResponse(
         event_id=event.id,
+        event_code=_event_code_for_id(event.id),
         slug=event.slug,
         guest_code=guest_code,
         admin_token=admin_token,
@@ -145,13 +146,13 @@ def get_event(
     settings: Settings = Depends(get_settings),
     current_user: AppUser = Depends(require_auth),
 ) -> EventResponse:
-    event = _get_event_or_404(db=db, event_id=event_id)
+    event = _get_event_by_identifier_or_404(db=db, event_identifier=event_id)
     require_event_access(db=db, event=event, user=current_user)
     if current_user.role == Role.GUEST:
         jobs: list[Job] = []
     else:
         jobs = (
-            db.execute(select(Job).where(Job.event_id == event_id).order_by(Job.created_at.desc()).limit(20))
+            db.execute(select(Job).where(Job.event_id == event.id).order_by(Job.created_at.desc()).limit(20))
             .scalars()
             .all()
         )
@@ -159,6 +160,7 @@ def get_event(
     guest_url = f"{settings.public_frontend_url.rstrip('/')}/g/{event.slug}" if guest_ready else ""
     return EventResponse(
         event_id=event.id,
+        event_code=_event_code_for_id(event.id),
         name=event.name,
         slug=event.slug,
         drive_link=event.drive_link,
@@ -180,7 +182,7 @@ def resync_event(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(require_role([Role.SUPER_ADMIN, Role.ADMIN, Role.PHOTOGRAPHER])),
 ) -> JobResponse:
-    event = _get_event_or_404(db=db, event_id=event_id)
+    event = _get_event_by_identifier_or_404(db=db, event_identifier=event_id)
     require_event_owner_or_super_admin(event=event, user=current_user)
     active_job = _latest_active_event_processing_job(db=db, event_id=event.id)
     if active_job:
@@ -301,6 +303,7 @@ def update_event(
     guest_url = f"{settings.public_frontend_url.rstrip('/')}/g/{event.slug}" if guest_ready else ""
     return EventResponse(
         event_id=event.id,
+        event_code=_event_code_for_id(event.id),
         name=event.name,
         slug=event.slug,
         drive_link=event.drive_link,
@@ -375,12 +378,7 @@ def resolve_guest_event(payload: GuestResolveRequest, db: Session = Depends(get_
     event = db.execute(select(Event).where(Event.slug == payload.slug.strip().lower())).scalar_one_or_none()
     if not event:
         raise APIException("event_not_found", "Event not found", status.HTTP_404_NOT_FOUND)
-    if event.status != "ready":
-        raise APIException(
-            "event_not_ready",
-            "Event is still processing images. Try again after processing completes.",
-            status.HTTP_409_CONFLICT,
-        )
+    # Public guest page should stay accessible while processing is ongoing.
     return GuestResolveResponse(
         event_id=event.id,
         slug=event.slug,
@@ -395,7 +393,7 @@ def join_event_as_guest(
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(require_role([Role.GUEST, Role.PHOTOGRAPHER, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> EventMembershipResponse:
-    event = _get_event_or_404(db=db, event_id=event_id)
+    event = _get_event_by_identifier_or_404(db=db, event_identifier=event_id)
     membership = db.execute(
         select(EventMembership).where(EventMembership.event_id == event.id, EventMembership.user_id == current_user.user_id).limit(1)
     ).scalar_one_or_none()
@@ -404,7 +402,12 @@ def join_event_as_guest(
         db.add(membership)
         db.commit()
         db.refresh(membership)
-    return EventMembershipResponse(event_id=membership.event_id, user_id=membership.user_id, joined_at=membership.created_at)
+    return EventMembershipResponse(
+        event_id=membership.event_id,
+        event_code=_event_code_for_id(membership.event_id),
+        user_id=membership.user_id,
+        joined_at=membership.created_at,
+    )
 
 
 @router.post("/guest/events/join-link", response_model=EventMembershipResponse, status_code=status.HTTP_201_CREATED)
@@ -424,7 +427,12 @@ def join_event_from_link(
         db.add(membership)
         db.commit()
         db.refresh(membership)
-    return EventMembershipResponse(event_id=membership.event_id, user_id=membership.user_id, joined_at=membership.created_at)
+    return EventMembershipResponse(
+        event_id=membership.event_id,
+        event_code=_event_code_for_id(membership.event_id),
+        user_id=membership.user_id,
+        joined_at=membership.created_at,
+    )
 
 
 @router.post("/guest/matches", response_model=GuestMatchResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -440,12 +448,15 @@ async def create_guest_match(
     event = db.execute(select(Event).where(Event.slug == normalized_slug)).scalar_one_or_none()
     if not event:
         raise APIException("event_not_found", "Event not found", status.HTTP_404_NOT_FOUND)
-    if event.status != "ready":
-        raise APIException(
-            "event_not_ready",
-            "Event is still processing images. Try again after processing completes.",
-            status.HTTP_409_CONFLICT,
-        )
+    status_row = _build_event_processing_status(db=db, event=event)
+    processed_available = max(0, int(status_row.processed_photos))
+    total_hint = max(0, int(status_row.total_photos))
+    remaining_hint = max(0, total_hint - processed_available) if total_hint > 0 else 0
+    if processed_available <= 0:
+        detail = "Event is still processing images. Please try again after a few photos are indexed."
+        if total_hint > 0:
+            detail = f"Event is processing. 0/{total_hint} photos are ready so far."
+        raise APIException("event_not_ready", detail, status.HTTP_409_CONFLICT)
     if event.guest_auth_required:
         if not current_user:
             raise APIException("not_authenticated", "Please sign in to upload selfie for this event", status.HTTP_401_UNAUTHORIZED)
@@ -470,6 +481,8 @@ async def create_guest_match(
         payload=payload,
         file_name=selfie.filename or "selfie.jpg",
         guest_user_id=current_user.user_id if current_user and current_user.role in {Role.GUEST, Role.PHOTOGRAPHER} else None,
+        processed_available=processed_available,
+        remaining_photos=remaining_hint,
     )
 
 
@@ -848,15 +861,20 @@ def photographer_events(
             .scalars()
             .first()
         )
+        status_row = _build_event_processing_status(db=db, event=event)
         rows.append(
             PhotographerEventListItem(
                 event_id=event.id,
+                event_code=_event_code_for_id(event.id),
                 name=event.name,
                 slug=event.slug,
-                status=event.status,
+                status=status_row.status,
                 owner_user_id=event.owner_user_id,
                 photo_count=photo_count,
                 guest_count=guest_count,
+                total_photos=max(0, int(status_row.total_photos)),
+                processed_photos=max(0, int(status_row.processed_photos)),
+                progress_percentage=float(status_row.progress_percentage),
                 last_sync_at=last_sync_job.updated_at if last_sync_job else None,
                 created_at=event.created_at,
                 updated_at=event.updated_at,
@@ -893,6 +911,7 @@ def photographer_event_details(
     guest_url = f"{settings.public_frontend_url.rstrip('/')}/g/{event.slug}" if guest_ready else ""
     return EventResponse(
         event_id=event.id,
+        event_code=_event_code_for_id(event.id),
         name=event.name,
         slug=event.slug,
         drive_link=event.drive_link,
@@ -987,6 +1006,7 @@ def guest_joined_events(
         return [
             GuestEventListItem(
                 event_id=event.id,
+                event_code=_event_code_for_id(event.id),
                 name=event.name,
                 slug=event.slug,
                 status=event.status,
@@ -1009,6 +1029,7 @@ def guest_joined_events(
         items.append(
             GuestEventListItem(
                 event_id=event.id,
+                event_code=_event_code_for_id(event.id),
                 name=event.name,
                 slug=event.slug,
                 status=event.status,
@@ -1033,6 +1054,7 @@ def guest_event_summary(
         raise APIException("forbidden", "Join this event first", status.HTTP_403_FORBIDDEN)
     return GuestEventSummary(
         event_id=event.id,
+        event_code=_event_code_for_id(event.id),
         name=event.name,
         slug=event.slug,
         status=event.status,
@@ -1050,12 +1072,15 @@ async def guest_event_selfie(
     current_user: AppUser = Depends(require_role([Role.GUEST, Role.PHOTOGRAPHER, Role.SUPER_ADMIN, Role.ADMIN])),
 ) -> GuestMatchResponse:
     event = _get_event_or_404(db=db, event_id=event_id)
-    if event.status != "ready":
-        raise APIException(
-            "event_not_ready",
-            "Event is still processing images. Try again after processing completes.",
-            status.HTTP_409_CONFLICT,
-        )
+    status_row = _build_event_processing_status(db=db, event=event)
+    processed_available = max(0, int(status_row.processed_photos))
+    total_hint = max(0, int(status_row.total_photos))
+    remaining_hint = max(0, total_hint - processed_available) if total_hint > 0 else 0
+    if processed_available <= 0:
+        detail = "Event is still processing images. Please try again after a few photos are indexed."
+        if total_hint > 0:
+            detail = f"Event is processing. 0/{total_hint} photos are ready so far."
+        raise APIException("event_not_ready", detail, status.HTTP_409_CONFLICT)
     if event.guest_auth_required and current_user.role in {Role.GUEST, Role.PHOTOGRAPHER}:
         membership = db.execute(
             select(EventMembership).where(EventMembership.event_id == event.id, EventMembership.user_id == current_user.user_id).limit(1)
@@ -1074,6 +1099,8 @@ async def guest_event_selfie(
         payload=payload,
         file_name=selfie.filename or "selfie.jpg",
         guest_user_id=current_user.user_id if current_user.role in {Role.GUEST, Role.PHOTOGRAPHER} else None,
+        processed_available=processed_available,
+        remaining_photos=remaining_hint,
     )
 
 
@@ -1153,14 +1180,26 @@ def _enqueue_guest_match(
     payload: bytes,
     file_name: str,
     guest_user_id: str | None,
+    processed_available: int = 0,
+    remaining_photos: int = 0,
 ) -> GuestMatchResponse:
+    if processed_available > 0 and remaining_photos > 0:
+        initial_message = (
+            f"Selfie received. Matching with {processed_available} processed photo(s). "
+            f"{remaining_photos} photo(s) are still syncing."
+        )
+    elif processed_available > 0:
+        initial_message = "Selfie received. Matching started."
+    else:
+        initial_message = "Selfie received. Processing started."
+
     query = GuestQuery(
         event_id=event.id,
         guest_user_id=guest_user_id,
         status="queued",
         selfie_path="",
         expires_at=datetime.now(timezone.utc) + timedelta(hours=settings.selfie_retention_hours),
-        message="Selfie received. Processing started.",
+        message=initial_message,
     )
     db.add(query)
     db.flush()
@@ -1212,6 +1251,19 @@ def _latest_event_processing_job(db: Session, event_id: str) -> Job | None:
         db.execute(
             select(Job)
             .where(Job.event_id == event_id, Job.job_type.in_([JOB_SYNC_EVENT, JOB_CLUSTER_EVENT]))
+            .order_by(Job.created_at.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _latest_sync_job(db: Session, event_id: str) -> Job | None:
+    return (
+        db.execute(
+            select(Job)
+            .where(Job.event_id == event_id, Job.job_type == JOB_SYNC_EVENT)
             .order_by(Job.created_at.desc())
             .limit(1)
         )
@@ -1272,40 +1324,120 @@ def _normalize_processing_status(raw_status: str, *, event_status: str) -> str:
         return "COMPLETED"
     if value in {"failed"}:
         return "FAILED"
-    if value in {"canceled", "cancelled"}:
+    if value in {"canceled", "cancelled", "cancel_requested"}:
         return "CANCELLED"
     fallback = str(event_status or "").strip().upper()
     return fallback or "QUEUED"
 
 
+def _event_code_for_id(event_id: str) -> str:
+    cleaned = re.sub(r"[^0-9a-fA-F]", "", str(event_id or ""))
+    if not cleaned:
+        return "0000"
+    tail = cleaned[-8:] if len(cleaned) >= 8 else cleaned
+    try:
+        value = int(tail, 16)
+    except ValueError:
+        value = sum(ord(ch) for ch in cleaned)
+    return f"{1000 + (value % 9000):04d}"
+
+
+def _find_event_by_code(db: Session, code: str) -> Event | None:
+    raw = str(code or "").strip()
+    if not re.fullmatch(r"\d{4}", raw):
+        return None
+    events = db.execute(select(Event).order_by(Event.created_at.desc()).limit(5000)).scalars().all()
+    for event in events:
+        if _event_code_for_id(event.id) == raw:
+            return event
+    return None
+
+
+def _get_event_by_identifier_or_404(db: Session, event_identifier: str) -> Event:
+    token = str(event_identifier or "").strip()
+    if not token:
+        raise APIException("event_not_found", "Event not found", status.HTTP_404_NOT_FOUND)
+    event = db.get(Event, token)
+    if event:
+        return event
+    by_code = _find_event_by_code(db, token)
+    if by_code:
+        return by_code
+    by_slug = db.execute(select(Event).where(Event.slug == token.lower()).limit(1)).scalar_one_or_none()
+    if by_slug:
+        return by_slug
+    raise APIException("event_not_found", "Event not found", status.HTTP_404_NOT_FOUND)
+
+
 def _build_event_processing_status(*, db: Session, event: Event) -> EventProcessingStatusResponse:
-    job = _latest_event_processing_job(db=db, event_id=event.id)
-    payload = dict(job.payload or {}) if job else {}
+    active_job = _latest_active_event_processing_job(db=db, event_id=event.id)
+    latest_job = active_job or _latest_event_processing_job(db=db, event_id=event.id)
+    latest_sync = _latest_sync_job(db=db, event_id=event.id)
 
-    total_photos = int(payload.get("total_listed") or payload.get("total_photos") or 0)
-    processed_photos = int(payload.get("completed") or payload.get("processed") or 0)
-    failed_photos = int(payload.get("failures") or payload.get("failed_photos") or 0)
+    active_payload = dict(active_job.payload or {}) if active_job else {}
+    sync_payload = dict(latest_sync.payload or {}) if latest_sync else {}
 
+    total_photos = int(active_payload.get("total_listed") or active_payload.get("total_photos") or 0)
     if total_photos <= 0:
-        total_photos = int(db.execute(select(func.count(Photo.id)).where(Photo.event_id == event.id)).scalar_one() or 0)
-    if processed_photos <= 0 and total_photos > 0 and event.status == "ready":
+        total_photos = int(sync_payload.get("total_listed") or sync_payload.get("total_photos") or 0)
+
+    processed_photos = int(active_payload.get("completed") or active_payload.get("processed") or 0)
+    if processed_photos <= 0:
+        processed_photos = int(sync_payload.get("completed") or sync_payload.get("processed") or 0)
+
+    failed_photos = int(active_payload.get("failures") or active_payload.get("failed_photos") or 0)
+    if failed_photos <= 0:
+        failed_photos = int(sync_payload.get("failures") or sync_payload.get("failed_photos") or 0)
+
+    photo_count = int(db.execute(select(func.count(Photo.id)).where(Photo.event_id == event.id)).scalar_one() or 0)
+    if total_photos <= 0:
+        total_photos = photo_count
+
+    # Keep counts stable across pause/resume and clustering stages.
+    if active_job and active_job.job_type == JOB_SYNC_EVENT:
+        if processed_photos <= 0:
+            processed_photos = min(photo_count, total_photos) if total_photos > 0 else photo_count
+    elif event.status in {"processing_clusters", "ready"}:
+        processed_photos = max(processed_photos, photo_count)
+    elif processed_photos <= 0 and photo_count > 0:
+        processed_photos = photo_count
+
+    if total_photos > 0 and processed_photos > total_photos:
         processed_photos = total_photos
 
-    progress_percentage = float(job.progress_percent if job else (100.0 if event.status == "ready" else 0.0))
-    progress_percentage = float(max(0.0, min(100.0, progress_percentage)))
-
-    status_source = job.status if job else event.status
+    status_source = active_job.status if active_job else (latest_job.status if latest_job else event.status)
     normalized = _normalize_processing_status(status_source, event_status=event.status)
-    updated_at = job.updated_at if job else event.updated_at
+
+    if active_job:
+        if active_job.job_type == JOB_SYNC_EVENT and total_photos > 0:
+            computed = (processed_photos / total_photos) * 100.0
+            progress_percentage = max(float(active_job.progress_percent or 0.0), computed)
+        elif active_job.job_type == JOB_CLUSTER_EVENT:
+            cluster_progress = max(0.0, min(100.0, float(active_job.progress_percent or 0.0)))
+            progress_percentage = 95.0 + (cluster_progress / 100.0) * 4.0
+        else:
+            progress_percentage = float(active_job.progress_percent or 0.0)
+    elif normalized == "COMPLETED":
+        progress_percentage = 100.0
+    elif total_photos > 0:
+        progress_percentage = (processed_photos / total_photos) * 100.0
+    else:
+        progress_percentage = 0.0
+
+    progress_percentage = float(max(0.0, min(100.0, progress_percentage)))
+    if normalized in {"RUNNING", "QUEUED"} and progress_percentage >= 100.0:
+        progress_percentage = 99.0
+
+    updated_at = active_job.updated_at if active_job else (latest_job.updated_at if latest_job else event.updated_at)
 
     return EventProcessingStatusResponse(
         event_id=event.id,
         status=normalized,
-        total_photos=max(0, total_photos),
-        processed_photos=max(0, processed_photos),
-        failed_photos=max(0, failed_photos),
+        total_photos=max(0, int(total_photos)),
+        processed_photos=max(0, int(processed_photos)),
+        failed_photos=max(0, int(failed_photos)),
         progress_percentage=progress_percentage,
-        job_id=job.id if job else None,
+        job_id=(active_job.id if active_job else (latest_job.id if latest_job else None)),
         updated_at=updated_at,
     )
 

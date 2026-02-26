@@ -12,7 +12,6 @@ export default function NewEventPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [driveLink, setDriveLink] = useState("");
-  const [slug, setSlug] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState<EventCreateResponse | null>(null);
@@ -25,13 +24,12 @@ export default function NewEventPage() {
       const response = await createEvent({
         name: name.trim(),
         drive_link: driveLink.trim(),
-        slug: slug.trim() || undefined
       });
       saveEventSecrets({
         eventId: response.event_id,
         slug: response.slug,
         adminToken: response.admin_token,
-        guestCode: response.guest_code
+        guestCode: response.guest_code,
       });
       setCreated(response);
     } catch (err) {
@@ -54,10 +52,6 @@ export default function NewEventPage() {
             Public Google Drive Folder Link
             <input className="field mt-1" value={driveLink} onChange={(e) => setDriveLink(e.target.value)} required />
           </label>
-          <label className="text-sm">
-            Slug (optional)
-            <input className="field mt-1" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="wedding-delhi-2026" />
-          </label>
           <div className="mt-2 flex flex-wrap gap-2">
             <button className="btn btn-primary" type="submit" disabled={loading}>
               {loading ? "Creating..." : "Create Event"}
@@ -74,7 +68,7 @@ export default function NewEventPage() {
         <Card title="Event Created">
           <div className="grid gap-2 text-sm">
             <p>
-              <strong>Event ID:</strong> {created.event_id}
+              <strong>Event ID:</strong> {created.event_code}
             </p>
             <p>
               <strong>Slug:</strong> {created.slug}
@@ -90,9 +84,7 @@ export default function NewEventPage() {
                 </a>
               </p>
             ) : (
-              <p className="text-muted">
-                Guest link is generated after image processing completes. Open event dashboard for live progress.
-              </p>
+              <p className="text-muted">Guest link is generated after image processing completes. Open event dashboard for live progress.</p>
             )}
             <p className="text-xs text-muted">Guest code is not required. Anyone with guest URL can join this event.</p>
           </div>

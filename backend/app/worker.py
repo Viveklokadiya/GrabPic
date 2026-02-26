@@ -388,7 +388,7 @@ def _process_cluster_event(db: Session, job: Job, settings: Settings) -> None:
     if _is_cancel_requested(db, job.id):
         _cancel_sync_or_cluster_job(db=db, job=job, event=event)
         return
-    mark_job_progress(db, job, progress_percent=20.0, stage="clustering_faces")
+    mark_job_progress(db, job, progress_percent=96.0, stage="clustering_faces")
     upsert_job_payload(job, {"phase": "clustering"})
     cluster_count = cluster_event_faces(
         db,
@@ -446,12 +446,21 @@ def _process_match_guest(db: Session, job: Job, settings: Settings, face_engine:
         return
 
     selfie_bytes = selfie_path.read_bytes()
+    processed_count, total_count = _sync_progress_counts(db, event.id)
+    remaining_count = max(0, total_count - processed_count) if total_count > 0 else 0
+
     selfie_embedding = face_engine.embed_single_face(selfie_bytes)
     if selfie_embedding is None:
         query.status = "completed"
         query.cluster_id = None
         query.confidence = 0.0
-        query.message = "No clear face found in selfie. Please upload a clearer front-facing photo."
+        if remaining_count > 0:
+            query.message = (
+                "No clear face found in selfie. Please upload a clearer front-facing photo. "
+                f"{remaining_count} photo(s) are still syncing."
+            )
+        else:
+            query.message = "No clear face found in selfie. Please upload a clearer front-facing photo."
         query.completed_at = datetime.now(timezone.utc)
         db.add(query)
         mark_job_completed(db, job, stage="match_completed_no_face", payload={"result": "no_face"})
@@ -477,7 +486,13 @@ def _process_match_guest(db: Session, job: Job, settings: Settings, face_engine:
         query.status = "completed"
         query.cluster_id = None
         query.confidence = 0.0
-        query.message = "No confident match found. Try a clearer selfie."
+        if remaining_count > 0:
+            query.message = (
+                f"No confident match found in {processed_count} processed photo(s). "
+                f"{remaining_count} photo(s) are still syncing."
+            )
+        else:
+            query.message = "No confident match found. Try a clearer selfie."
         query.completed_at = datetime.now(timezone.utc)
         db.add(query)
         mark_job_completed(
@@ -502,7 +517,13 @@ def _process_match_guest(db: Session, job: Job, settings: Settings, face_engine:
     query.status = "completed"
     query.cluster_id = None
     query.confidence = top_confidence
-    query.message = f"Found {len(results)} matching photo(s)."
+    if remaining_count > 0:
+        query.message = (
+            f"Found {len(results)} matching photo(s) from {processed_count} processed photo(s). "
+            f"{remaining_count} photo(s) are still syncing."
+        )
+    else:
+        query.message = f"Found {len(results)} matching photo(s)."
     query.completed_at = datetime.now(timezone.utc)
     db.add(query)
 
@@ -520,6 +541,98 @@ def _process_match_guest(db: Session, job: Job, settings: Settings, face_engine:
     )
 
 
+def _sync_progress_counts(db: Session, event_id: str) -> tuple[int, int]:
+    latest_sync = (
+        db.execute(
+            select(Job)
+            .where(Job.event_id == event_id, Job.job_type == JOB_SYNC_EVENT)
+            .order_by(Job.created_at.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    payload = dict(latest_sync.payload or {}) if latest_sync else {}
+    total = int(payload.get("total_listed") or payload.get("total_photos") or 0)
+    processed = int(payload.get("completed") or payload.get("processed") or 0)
+
+    photo_count = int(db.execute(select(func.count(Photo.id)).where(Photo.event_id == event_id)).scalar_one() or 0)
+    if total <= 0:
+        total = photo_count
+    if processed <= 0:
+        processed = photo_count
+    processed = max(processed, photo_count)
+    if total > 0 and processed > total:
+        processed = total
+    return max(0, int(processed)), max(0, int(total))
+
+
+def _enqueue_auto_sync_jobs(db: Session, settings: Settings) -> int:
+    if not bool(settings.auto_sync_enabled):
+        return 0
+    if not settings.google_drive_api_key:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    interval = timedelta(minutes=max(1, int(settings.auto_sync_interval_minutes)))
+    batch = max(1, int(settings.auto_sync_batch_size))
+
+    events = (
+        db.execute(
+            select(Event)
+            .where(Event.status.in_(["ready", "failed", "canceled", "cancel_requested"]))
+            .order_by(Event.updated_at.asc())
+            .limit(500)
+        )
+        .scalars()
+        .all()
+    )
+
+    queued = 0
+    for event in events:
+        active = db.execute(
+            select(Job.id)
+            .where(
+                Job.event_id == event.id,
+                Job.job_type.in_([JOB_SYNC_EVENT, JOB_CLUSTER_EVENT]),
+                Job.status.in_([JOB_STATUS_QUEUED, JOB_STATUS_RUNNING, JOB_STATUS_CANCEL_REQUESTED]),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        if active:
+            continue
+
+        last_sync = (
+            db.execute(
+                select(Job)
+                .where(Job.event_id == event.id, Job.job_type == JOB_SYNC_EVENT)
+                .order_by(Job.updated_at.desc())
+                .limit(1)
+            )
+            .scalars()
+            .first()
+        )
+        if last_sync:
+            last_at = last_sync.updated_at or last_sync.created_at
+            if last_at and (now - last_at) < interval:
+                continue
+
+        event.status = "syncing"
+        db.add(event)
+        create_job(
+            db,
+            job_type=JOB_SYNC_EVENT,
+            event_id=event.id,
+            payload={"trigger": "auto_refresh"},
+            stage="queued_for_sync",
+        )
+        queued += 1
+        if queued >= batch:
+            break
+
+    return queued
+
+
 def _run_cleanup(settings: Settings) -> None:
     with SessionLocal() as db:
         now = datetime.now(timezone.utc)
@@ -534,6 +647,10 @@ def _run_cleanup(settings: Settings) -> None:
             delete_if_exists(settings, query.selfie_path)
             query.selfie_path = ""
             db.add(query)
+
+        queued = _enqueue_auto_sync_jobs(db, settings)
+        if queued > 0:
+            logger.info("Auto-sync queued %s event(s)", queued)
         db.commit()
 
 
@@ -559,5 +676,33 @@ def _cancel_match_job(db: Session, job: Job, query: GuestQuery) -> None:
     mark_job_canceled(db, job, reason="Canceled by admin")
 
 
+def run_pool() -> None:
+    settings = get_settings()
+    workers = max(1, int(settings.worker_concurrency))
+    if workers == 1:
+        run_forever()
+        return
+
+    import multiprocessing as mp
+
+    logger.info("Starting worker pool with %s processes", workers)
+    procs: list[mp.Process] = []
+    for index in range(workers):
+        proc = mp.Process(target=run_forever, name=f"grabpic-worker-{index + 1}")
+        proc.start()
+        procs.append(proc)
+
+    try:
+        for proc in procs:
+            proc.join()
+    except KeyboardInterrupt:
+        logger.info("Stopping worker pool")
+        for proc in procs:
+            if proc.is_alive():
+                proc.terminate()
+        for proc in procs:
+            proc.join()
+
+
 if __name__ == "__main__":
-    run_forever()
+    run_pool()

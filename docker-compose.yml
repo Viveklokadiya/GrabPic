@@ -61,6 +61,10 @@ services:
       GOOGLE_DRIVE_API_KEY: ${GOOGLE_DRIVE_API_KEY:-}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-336}
+      WORKER_CONCURRENCY: 2
+      AUTO_SYNC_ENABLED: true
+      AUTO_SYNC_INTERVAL_MINUTES: 5
+      AUTO_SYNC_BATCH_SIZE: 4
     command: python -m app.worker
     volumes:
       - ./backend:/app

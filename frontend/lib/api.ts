@@ -16,6 +16,7 @@ export type JobResponse = {
 
 export type EventCreateResponse = {
   event_id: string;
+  event_code: string;
   slug: string;
   guest_code: string;
   admin_token: string;
@@ -33,6 +34,7 @@ export type EventUpdateRequest = {
 
 export type EventResponse = {
   event_id: string;
+  event_code: string;
   name: string;
   slug: string;
   drive_link: string;
@@ -67,6 +69,7 @@ export type GuestResolveResponse = {
 
 export type EventMembershipResponse = {
   event_id: string;
+  event_code: string;
   user_id: string;
   joined_at: string;
 };
@@ -210,12 +213,16 @@ export type AdminEventStatusItem = {
 
 export type PhotographerEventListItem = {
   event_id: string;
+  event_code: string;
   name: string;
   slug: string;
   status: string;
   owner_user_id: string | null;
   photo_count: number;
   guest_count: number;
+  total_photos: number;
+  processed_photos: number;
+  progress_percentage: number;
   last_sync_at: string | null;
   created_at: string;
   updated_at: string;
@@ -242,6 +249,7 @@ export type EventPhotoSafeResponse = {
 
 export type GuestEventListItem = {
   event_id: string;
+  event_code: string;
   name: string;
   slug: string;
   status: string;
@@ -250,6 +258,7 @@ export type GuestEventListItem = {
 
 export type GuestEventSummary = {
   event_id: string;
+  event_code: string;
   name: string;
   slug: string;
   status: string;

@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     job_poll_interval_seconds: int = Field(default=2)
     job_idle_sleep_seconds: int = Field(default=1)
 
+    auto_sync_enabled: bool = Field(default=True, validation_alias=AliasChoices("AUTO_SYNC_ENABLED"))
+    auto_sync_interval_minutes: int = Field(default=5, validation_alias=AliasChoices("AUTO_SYNC_INTERVAL_MINUTES"))
+    auto_sync_batch_size: int = Field(default=4, validation_alias=AliasChoices("AUTO_SYNC_BATCH_SIZE"))
+    worker_concurrency: int = Field(default=2, validation_alias=AliasChoices("WORKER_CONCURRENCY"))
+
     storage_root: str = Field(default="storage")
 
     @property

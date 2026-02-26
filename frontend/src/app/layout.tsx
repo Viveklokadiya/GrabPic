@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
 import Script from "next/script";
+import { Suspense } from "react";
 
 import NavigationLoader from "@/components/navigation-loader";
 import "./globals.css";
@@ -20,7 +21,7 @@ const body = DM_Sans({
 export const metadata: Metadata = {
   title: "GrabPic | Find your wedding photos instantly",
   description:
-    "GrabPic helps photographers share event photos faster. Guests upload a selfie and instantly get My Photos from Drive or OneDrive.",
+    "GrabPic helps photographers share event photos faster. Guests upload a selfie and instantly get My Photos from Google Drive.",
   openGraph: {
     title: "GrabPic | Find your wedding photos instantly",
     description:
@@ -68,7 +69,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   }
 })();`}
         </Script>
-        <NavigationLoader />
+        <Suspense fallback={null}>
+          <NavigationLoader />
+        </Suspense>
         {children}
       </body>
     </html>

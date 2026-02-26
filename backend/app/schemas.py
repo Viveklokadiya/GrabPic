@@ -45,6 +45,7 @@ class JobResponse(BaseModel):
 
 class EventCreateResponse(BaseModel):
     event_id: str
+    event_code: str
     slug: str
     guest_code: str
     admin_token: str
@@ -55,6 +56,7 @@ class EventCreateResponse(BaseModel):
 
 class EventResponse(BaseModel):
     event_id: str
+    event_code: str
     name: str
     slug: str
     drive_link: str
@@ -202,12 +204,16 @@ class AdminEventStatusItem(BaseModel):
 
 class PhotographerEventListItem(BaseModel):
     event_id: str
+    event_code: str
     name: str
     slug: str
     status: str
     owner_user_id: str | None
     photo_count: int
     guest_count: int
+    total_photos: int
+    processed_photos: int
+    progress_percentage: float
     last_sync_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -215,6 +221,7 @@ class PhotographerEventListItem(BaseModel):
 
 class GuestEventListItem(BaseModel):
     event_id: str
+    event_code: str
     name: str
     slug: str
     status: str
@@ -223,6 +230,7 @@ class GuestEventListItem(BaseModel):
 
 class GuestEventSummary(BaseModel):
     event_id: str
+    event_code: str
     name: str
     slug: str
     status: str
@@ -246,6 +254,7 @@ class GuestMyPhotosResponse(BaseModel):
 
 class EventMembershipResponse(BaseModel):
     event_id: str
+    event_code: str
     user_id: str
     joined_at: datetime
 
