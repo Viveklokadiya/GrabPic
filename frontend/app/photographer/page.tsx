@@ -53,6 +53,26 @@ export default function PhotographerDashboard() {
     }
   }
 
+  async function downloadQrImage(url: string, filename: string) {
+    if (!url) return;
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error("QR download failed");
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
+
   const total = events.length;
   const active = events.filter((e) => e.status === "RUNNING" || e.status === "QUEUED").length;
   const completed = events.filter((e) => e.status === "COMPLETED").length;
@@ -69,7 +89,7 @@ export default function PhotographerDashboard() {
 
   const latestQrUrl = useMemo(() => {
     if (!latestGuestLink) return "";
-    return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&format=png&data=${encodeURIComponent(latestGuestLink)}`;
+    return `/api/qr?size=320&data=${encodeURIComponent(latestGuestLink)}`;
   }, [latestGuestLink]);
 
   return (
@@ -129,47 +149,53 @@ export default function PhotographerDashboard() {
               <thead>
                 <tr className="bg-slate-50/70 text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-6 py-3 text-left font-semibold">Event</th>
+                  <th className="px-6 py-3 text-left font-semibold">Event ID</th>
                   <th className="px-6 py-3 text-left font-semibold">Status</th>
                   <th className="hidden px-6 py-3 text-left font-semibold md:table-cell">Photos</th>
                   <th className="hidden px-6 py-3 text-left font-semibold md:table-cell">Guests</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {recentEvents.map((evt) => (
-                  <tr
-                    key={evt.event_id}
-                    className="cursor-pointer transition-colors hover:bg-slate-50/50"
-                    onClick={() => router.push(`/photographer/events/${evt.event_id}`)}
-                  >
-                    <td className="px-6 py-3.5">
-                      <p className="font-semibold text-slate-900">{evt.name}</p>
-                      <p className="text-xs text-slate-400">/{evt.slug}</p>
-                      <div className="mt-1 inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-mono text-slate-600">
-                        Event ID: {evt.event_code}
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void copyText(evt.event_code, evt.event_id);
-                          }}
-                          className="text-primary hover:text-primary/80"
-                          title="Copy Event ID"
-                        >
-                          <span className="material-symbols-outlined text-[12px]">content_copy</span>
-                        </button>
-                        {copiedKey === evt.event_id ? <span className="text-emerald-700">Copied</span> : null}
-                      </div>
-                    </td>
-                    <td className="px-6 py-3.5">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusBadge(evt.status)}`}>
-                        <span className={`size-1.5 rounded-full ${statusDot(evt.status)}`} />
-                        {evt.status}
-                      </span>
-                    </td>
-                    <td className="hidden px-6 py-3.5 font-mono text-slate-500 md:table-cell">{evt.processed_photos}/{evt.total_photos || evt.photo_count}</td>
-                    <td className="hidden px-6 py-3.5 font-mono text-slate-500 md:table-cell">{evt.guest_count}</td>
-                  </tr>
-                ))}
+                {recentEvents.map((evt) => {
+                  const copyEventIdKey = `event-code-${evt.event_id}`;
+                  return (
+                    <tr
+                      key={evt.event_id}
+                      className="cursor-pointer transition-colors hover:bg-slate-50/50"
+                      onClick={() => router.push(`/photographer/events/${evt.event_id}`)}
+                    >
+                      <td className="px-6 py-3.5">
+                        <p className="font-semibold text-slate-900">{evt.name}</p>
+                        <p className="text-xs text-slate-400">/{evt.slug}</p>
+                      </td>
+                      <td className="px-6 py-3.5">
+                        <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-mono text-slate-700">
+                          {evt.event_code}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void copyText(evt.event_code, copyEventIdKey);
+                            }}
+                            className="inline-flex items-center rounded px-1 text-primary hover:bg-primary/10"
+                            title="Copy Event ID"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">content_copy</span>
+                          </button>
+                        </div>
+                        {copiedKey === copyEventIdKey ? <p className="mt-1 text-[10px] font-medium text-emerald-700">Copied</p> : null}
+                      </td>
+                      <td className="px-6 py-3.5">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusBadge(evt.status)}`}>
+                          <span className={`size-1.5 rounded-full ${statusDot(evt.status)}`} />
+                          {evt.status}
+                        </span>
+                      </td>
+                      <td className="hidden px-6 py-3.5 font-mono text-slate-500 md:table-cell">{evt.processed_photos}/{evt.total_photos || evt.photo_count}</td>
+                      <td className="hidden px-6 py-3.5 font-mono text-slate-500 md:table-cell">{evt.guest_count}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -198,14 +224,16 @@ export default function PhotographerDashboard() {
                     <span className="material-symbols-outlined text-[14px]">content_copy</span>
                     Copy Link
                   </button>
-                  <a
-                    href={latestQrUrl}
-                    download={`grabpic-${latestEvent.slug}-scanner.png`}
-                    className="inline-flex items-center justify-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90"
+                  <button
+                    type="button"
+                    data-no-loader="true"
+                    onClick={() => void downloadQrImage(latestQrUrl, `grabpic-${latestEvent.slug}-scanner.png`)}
+                    disabled={!latestQrUrl}
+                    className="inline-flex items-center justify-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <span className="material-symbols-outlined text-[14px]">download</span>
                     Download QR
-                  </a>
+                  </button>
                 </div>
                 {copiedKey === "latest-link" ? <p className="text-[11px] text-emerald-700">Guest link copied.</p> : null}
               </div>

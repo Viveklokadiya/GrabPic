@@ -61,6 +61,25 @@ export default function PhotographerEventDetailsPage() {
       // ignore clipboard errors
     }
   }
+  async function downloadQrImage(url: string, filename: string) {
+    if (!url) return;
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error("QR download failed");
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
 
   async function loadEventMeta() {
     if (!eventId) return;
@@ -157,7 +176,7 @@ export default function PhotographerEventDetailsPage() {
 
   const qrImageUrl = useMemo(() => {
     if (!publicGuestUrl) return "";
-    return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&format=png&data=${encodeURIComponent(publicGuestUrl)}`;
+    return `/api/qr?size=320&data=${encodeURIComponent(publicGuestUrl)}`;
   }, [publicGuestUrl]);
 
   if (loading) {
@@ -283,14 +302,16 @@ export default function PhotographerEventDetailsPage() {
                 ) : null}
               </div>
               <p className="text-[11px] text-slate-500">Guests can scan this and open face match directly without login for public events.</p>
-              <a
-                href={qrImageUrl}
-                download={`grabpic-${eventData?.slug || "event"}-scanner.png`}
-                className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90"
+              <button
+                type="button"
+                data-no-loader="true"
+                onClick={() => void downloadQrImage(qrImageUrl, `grabpic-${eventData?.slug || "event"}-scanner.png`)}
+                disabled={!qrImageUrl}
+                className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span className="material-symbols-outlined text-[14px]">download</span>
                 Download QR
-              </a>
+              </button>
             </div>
           )}
         </div>
