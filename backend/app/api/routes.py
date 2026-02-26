@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
+import uuid
 from datetime import datetime, timezone
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -54,6 +56,8 @@ from app.schemas import (
     PhotographerEventListItem,
     CreateUserRequest,
     UpdateUserRoleRequest,
+    SupportContactRequest,
+    SupportContactResponse,
     UserSummaryResponse,
 )
 from app.services.jobs import JOB_MATCH_GUEST, JOB_SYNC_EVENT, create_job
@@ -545,6 +549,58 @@ def get_guest_match(
 @router.get("/health")
 def health() -> dict[str, str | bool]:
     return {"ok": True, "service": "grabpic-api"}
+
+@router.post("/support/contact", response_model=SupportContactResponse, status_code=status.HTTP_201_CREATED)
+def submit_support_contact(
+    payload: SupportContactRequest,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> SupportContactResponse:
+    name = payload.name.strip()
+    email = payload.email.strip().lower()
+    subject = (payload.subject or "").strip() or "General Support"
+    message = payload.message.strip()
+
+    if len(name) < 2:
+        raise APIException("invalid_name", "Please enter your full name", status.HTTP_400_BAD_REQUEST)
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise APIException("invalid_email", "Please provide a valid email address", status.HTTP_400_BAD_REQUEST)
+    if len(message) < 10:
+        raise APIException("invalid_message", "Please enter more details in the message", status.HTTP_400_BAD_REQUEST)
+
+    ticket_id = uuid.uuid4().hex[:12]
+    received_at = datetime.now(timezone.utc)
+
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    client_ip = (
+        request.headers.get("cf-connecting-ip")
+        or (forwarded_for.split(",")[0].strip() if forwarded_for else "")
+        or (request.client.host if request.client else "")
+    )
+
+    support_record = {
+        "ticket_id": ticket_id,
+        "received_at": received_at.isoformat(),
+        "name": name,
+        "email": email,
+        "subject": subject,
+        "message": message,
+        "page_url": (payload.page_url or "").strip(),
+        "client_ip": client_ip,
+        "user_agent": request.headers.get("user-agent", ""),
+    }
+
+    support_dir = settings.storage_root_path / "support"
+    support_dir.mkdir(parents=True, exist_ok=True)
+    support_file = support_dir / "messages.jsonl"
+    with support_file.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(support_record, ensure_ascii=False) + "\n")
+
+    return SupportContactResponse(
+        ticket_id=ticket_id,
+        received_at=received_at,
+        message="Support request received. Our team will contact you soon.",
+    )
 
 
 @router.get("/admin/events", response_model=AdminEventsResponse)

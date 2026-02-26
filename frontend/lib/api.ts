@@ -67,6 +67,20 @@ export type GuestResolveResponse = {
   requires_auth: boolean;
 };
 
+export type SupportContactRequest = {
+  name: string;
+  email: string;
+  subject?: string;
+  message: string;
+  page_url?: string;
+};
+
+export type SupportContactResponse = {
+  ticket_id: string;
+  received_at: string;
+  message: string;
+};
+
 export type EventMembershipResponse = {
   event_id: string;
   event_code: string;
@@ -340,6 +354,13 @@ export function resyncEvent(eventId: string, _authorizationToken?: string) {
 export function cancelJob(jobId: string, _authorizationToken?: string) {
   return apiFetch<JobResponse>(`/jobs/${encodeURIComponent(jobId)}/cancel`, {
     method: "POST",
+  });
+}
+
+export function submitSupportContact(input: SupportContactRequest) {
+  return apiFetch<SupportContactResponse>("/support/contact", {
+    method: "POST",
+    body: JSON.stringify(input),
   });
 }
 
