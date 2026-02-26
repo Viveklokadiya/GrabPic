@@ -89,7 +89,7 @@ export default function PhotographerDashboard() {
 
   const latestQrUrl = useMemo(() => {
     if (!latestGuestLink) return "";
-    return `/api/qr?size=320&data=${encodeURIComponent(latestGuestLink)}`;
+    return `/qr?size=320&data=${encodeURIComponent(latestGuestLink)}`;
   }, [latestGuestLink]);
 
   return (
