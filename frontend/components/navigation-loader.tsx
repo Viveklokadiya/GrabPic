@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
-const MIN_VISIBLE_MS = 320;
-const HIDE_TRANSITION_MS = 220;
-const FAILSAFE_HIDE_MS = 8000;
+const MIN_VISIBLE_MS = 220;
+const HIDE_TRANSITION_MS = 180;
+const FAILSAFE_HIDE_MS = 3500;
 
 export default function NavigationLoader() {
   const pathname = usePathname();
@@ -58,16 +58,16 @@ export default function NavigationLoader() {
 
     clearTimer(hideTimerRef);
     setVisible(true);
-    setProgress(12);
+    setProgress(14);
 
     clearTimer(progressTimerRef);
     progressTimerRef.current = setInterval(() => {
       setProgress((prev) => {
-        if (prev >= 90) return prev;
-        const next = prev + (90 - prev) * 0.18 + 1.6;
-        return Math.min(90, Number(next.toFixed(2)));
+        if (prev >= 88) return prev;
+        const next = prev + (88 - prev) * 0.2 + 1.2;
+        return Math.min(88, Number(next.toFixed(2)));
       });
-    }, 180);
+    }, 160);
 
     clearTimer(failsafeTimerRef);
     failsafeTimerRef.current = setTimeout(() => {
@@ -94,7 +94,10 @@ export default function NavigationLoader() {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
       const target = event.target as HTMLElement | null;
-      const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
+      if (!target) return;
+      if (target.closest('[data-no-loader="true"]')) return;
+
+      const anchor = target.closest("a[href]") as HTMLAnchorElement | null;
       if (!anchor) return;
 
       if (anchor.dataset.noLoader === "true") return;
@@ -102,7 +105,7 @@ export default function NavigationLoader() {
       if (anchor.target && anchor.target !== "_self") return;
 
       const href = anchor.getAttribute("href") || "";
-      if (!href || href.startsWith("#")) return;
+      if (!href || href.startsWith("#") || href.startsWith("javascript:")) return;
 
       let nextUrl: URL;
       try {
@@ -138,20 +141,20 @@ export default function NavigationLoader() {
       startLoader();
     };
 
-    const onPopState = () => {
-      startLoader();
+    const onPageShow = () => {
+      finishLoader();
     };
 
     document.addEventListener("click", onDocumentClick, true);
     document.addEventListener("submit", onSubmit, true);
-    window.addEventListener("popstate", onPopState);
+    window.addEventListener("pageshow", onPageShow);
 
     return () => {
       document.removeEventListener("click", onDocumentClick, true);
       document.removeEventListener("submit", onSubmit, true);
-      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("pageshow", onPageShow);
     };
-  }, [startLoader]);
+  }, [finishLoader, startLoader]);
 
   useEffect(() => {
     return () => {
@@ -164,19 +167,13 @@ export default function NavigationLoader() {
   return (
     <div
       aria-hidden="true"
-      className={`pointer-events-none fixed inset-x-0 top-0 z-[10050] transition-opacity duration-200 ${visible ? "opacity-100" : "opacity-0"}`}
+      className={`pointer-events-none fixed inset-x-0 top-0 z-[10050] transition-opacity duration-150 ${visible ? "opacity-100" : "opacity-0"}`}
     >
       <div className="h-[3px] w-full bg-transparent">
         <div
-          className="h-full rounded-r-full bg-gradient-to-r from-primary/80 via-primary to-primary-dark shadow-[0_0_20px_rgba(72,72,229,0.5)] transition-[width] duration-200 ease-out"
+          className="h-full rounded-r-full bg-gradient-to-r from-primary/80 via-primary to-primary-dark shadow-[0_0_18px_rgba(72,72,229,0.45)] transition-[width] duration-150 ease-out"
           style={{ width: `${progress}%` }}
         />
-      </div>
-      <div
-        className={`absolute right-4 top-4 flex items-center gap-2 rounded-full border border-primary/20 bg-white/95 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary shadow-[0_10px_26px_rgba(72,72,229,0.2)] backdrop-blur transition-all duration-200 ${visible ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0"}`}
-      >
-        <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-        Loading
       </div>
     </div>
   );

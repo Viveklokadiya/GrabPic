@@ -44,8 +44,8 @@ export function clearAuthSession(): void {
 }
 
 export function roleHomePath(role: Role): string {
-  if (role === "SUPER_ADMIN") return "/admin";
-  if (role === "ADMIN") return "/admin";
+  if (role === "SUPER_ADMIN") return "/photographer";
+  if (role === "ADMIN") return "/photographer";
   if (role === "PHOTOGRAPHER") return "/photographer";
   return "/guest";
 }
