@@ -26,9 +26,9 @@ function GuestHeader() {
         <h2 className="text-slate-900 text-xl font-extrabold leading-tight tracking-tight">GrabPic</h2>
       </div>
       <div className="flex gap-2">
-        <button className="hidden sm:flex items-center justify-center rounded-xl h-10 px-4 bg-slate-100 text-slate-700 text-sm font-bold hover:bg-slate-200 transition-colors">
+        <Link href="/contact" className="hidden sm:flex items-center justify-center rounded-xl h-10 px-4 bg-slate-100 text-slate-700 text-sm font-bold hover:bg-slate-200 transition-colors">
           Help
-        </button>
+        </Link>
         <Link href="/guest" className="flex items-center justify-center rounded-xl h-10 px-4 bg-primary hover:bg-primary/90 transition-colors text-white text-sm font-bold shadow-md shadow-primary/20">
           My Events
         </Link>
