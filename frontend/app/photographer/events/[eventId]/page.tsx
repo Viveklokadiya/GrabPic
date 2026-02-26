@@ -176,7 +176,7 @@ export default function PhotographerEventDetailsPage() {
 
   const qrImageUrl = useMemo(() => {
     if (!publicGuestUrl) return "";
-    return `/api/qr?size=320&data=${encodeURIComponent(publicGuestUrl)}`;
+    return `/qr?size=320&data=${encodeURIComponent(publicGuestUrl)}`;
   }, [publicGuestUrl]);
 
   if (loading) {
