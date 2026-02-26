@@ -236,19 +236,18 @@ export default function GuestUploadPage() {
         </div>
       </header>
 
-      <div className="relative h-48 w-full bg-cover bg-center bg-slate-200 flex-shrink-0 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-        <div className="absolute bottom-0 left-0 p-8 w-full">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white text-xs font-bold mb-3">
+      <div className="w-full border-b border-slate-200 bg-white">
+        <div className="mx-auto flex w-full max-w-[980px] flex-col gap-2 px-6 py-4">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">
             <span className="material-symbols-outlined text-[14px]">calendar_month</span>
             <span>{eventInfo.slug}</span>
           </div>
-          <h1 className="text-white text-3xl font-black leading-tight tracking-tight">{eventInfo.displayName}</h1>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900">{eventInfo.displayName}</h1>
         </div>
       </div>
 
-      <main className="flex-grow flex flex-col items-center justify-start p-6 relative">
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+      <main className="relative flex flex-grow flex-col items-center justify-start px-6 pb-6 pt-4">
+        <div className="absolute top-0 left-0 h-full w-full overflow-hidden pointer-events-none -z-10">
           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[100px]" />
           <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[100px]" />
         </div>
