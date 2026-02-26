@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { decodeQrCodeFromImage, resolveGuestPathFromScan } from "@/lib/qr-scan";
-import { joinGuestEventFromSlug } from "@/lib/rbac-api";
+import { joinGuestEvent, joinGuestEventFromSlug } from "@/lib/rbac-api";
 
 export default function GuestJoinFromLinkPage() {
   const router = useRouter();
@@ -45,7 +45,7 @@ export default function GuestJoinFromLinkPage() {
     setError("");
     const code = manualCode.trim();
     try {
-      const membership = await joinGuestEventFromSlug(code);
+      const membership = await joinGuestEvent(code);
       router.replace(`/guest/events/${membership.event_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join event. Please check the code and try again.");
@@ -157,7 +157,7 @@ export default function GuestJoinFromLinkPage() {
                         Manual Entry
                       </span>
                       <h1 className="text-slate-900 text-3xl lg:text-4xl font-black tracking-tight">Enter Event Code</h1>
-                      <p className="text-slate-500 text-base">Type event ID or slug shared by photographer.</p>
+                      <p className="text-slate-500 text-base">Type 4-digit Event ID shared by photographer.</p>
                     </div>
                     <form className="space-y-6" onSubmit={onManualJoin}>
                       <div>
@@ -165,7 +165,7 @@ export default function GuestJoinFromLinkPage() {
                         <div className="relative">
                           <input
                             className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 pl-12 text-lg text-slate-900 placeholder:text-slate-400 focus:border-primary/80 focus:bg-white focus:ring-1 focus:ring-primary/80 focus:outline-none transition-all font-mono tracking-widest"
-                            placeholder="event-id or slug"
+                            placeholder="4-digit event ID"
                             value={manualCode}
                             onChange={(e) => setManualCode(e.target.value)}
                             required

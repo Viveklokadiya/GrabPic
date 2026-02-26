@@ -122,7 +122,7 @@ export function getGuestEvents() {
 }
 
 export function joinGuestEvent(eventId: string) {
-  return apiFetch(`/guest/events/${encodeURIComponent(eventId)}/join`, { method: "POST" });
+  return apiFetch<EventMembershipResponse>("/guest/events/" + encodeURIComponent(eventId) + "/join", { method: "POST" });
 }
 
 export function joinGuestEventFromSlug(slug: string) {

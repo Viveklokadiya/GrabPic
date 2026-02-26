@@ -13,7 +13,7 @@ type Step = {
 
 const steps: Step[] = [
   {
-    title: "Photographer connects a Drive/OneDrive folder",
+    title: "Photographer connects a Google Drive folder",
     text: "Keep your current workflow. Originals stay in your cloud folder where you already work.",
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
@@ -77,11 +77,7 @@ const faqItems = [
   },
   {
     q: "How long do you keep photos?",
-    a: "Photographers keep control of originals in Drive/OneDrive. GrabPic stores only what is needed and supports cleanup rules.",
-  },
-  {
-    q: "What about OneDrive?",
-    a: "OneDrive support is part of the platform roadmap and included in current onboarding plans.",
+    a: "Photographers keep control of originals in Google Drive. GrabPic stores only what is needed and supports cleanup rules.",
   },
 ];
 
@@ -105,13 +101,13 @@ export default function HomePage() {
                 Photographers upload to Drive. Guests upload a selfie. GrabPic auto-groups your photos by you.
               </p>
               <p className="mt-4 max-w-2xl text-base text-slate-600">
-                No more scrolling endless folders. Photographers keep control of originals in Drive/OneDrive.
+                No more scrolling endless folders. Photographers keep control of originals in Google Drive.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <a href="#waitlist" className="btn btn-primary">
                   Join the waitlist
                 </a>
-                <a href="#how" className="btn btn-secondary">
+                <a href="#how" data-no-loader="true" className="btn btn-secondary">
                   See how it works
                 </a>
               </div>
@@ -185,7 +181,7 @@ export default function HomePage() {
                 We keep this lightweight with fast vector search in pgvector, designed for event-scale galleries.
               </p>
               <p>
-                Photographers keep control of originals in Drive/OneDrive, while GrabPic focuses on discovery and sharing speed.
+                Photographers keep control of originals in Google Drive, while GrabPic focuses on discovery and sharing speed.
               </p>
               <p className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 font-medium text-teal-800">We don&apos;t sell your data.</p>
             </div>
