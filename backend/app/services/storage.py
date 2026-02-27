@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from PIL import Image
@@ -49,7 +50,10 @@ def delete_if_exists(settings: Settings, relative_path: str) -> None:
         return
 
 
+_SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9\-_]")
+
+
 def _safe_name(value: str) -> str:
-    cleaned = "".join(ch for ch in str(value or "") if ch.isalnum() or ch in ("-", "_"))
+    cleaned = _SAFE_NAME_RE.sub("", str(value or ""))
     return cleaned or "item"
 

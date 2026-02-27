@@ -25,6 +25,29 @@ def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     return float(np.dot(a / a_norm, b / b_norm))
 
 
+def batch_cosine_similarities(query: list[float], embeddings: list[list[float]]) -> np.ndarray:
+    """Return cosine similarities between *query* and every row in *embeddings*.
+
+    Uses a single vectorised matrix-vector multiply instead of a Python loop,
+    which is substantially faster when *embeddings* contains many rows.
+    """
+    if not embeddings:
+        return np.zeros(0, dtype=np.float32)
+    q = np.asarray(query, dtype=np.float32)
+    q_norm = float(np.linalg.norm(q))
+    if q_norm <= 0:
+        return np.zeros(len(embeddings), dtype=np.float32)
+    q_unit = q / q_norm
+    matrix = np.asarray(embeddings, dtype=np.float32)  # shape (N, D)
+    norms = np.linalg.norm(matrix, axis=1)  # shape (N,)
+    zero_mask = norms <= 0
+    safe_norms = np.where(zero_mask, 1.0, norms)
+    unit_matrix = matrix / safe_norms[:, np.newaxis]  # shape (N, D)
+    result = unit_matrix @ q_unit  # shape (N,)
+    result[zero_mask] = 0.0
+    return result
+
+
 def cosine_to_percent(cosine: float) -> float:
     score = ((float(cosine) - COSINE_MAP_FLOOR) / COSINE_MAP_SPAN) * 100.0
     return max(0.0, min(100.0, score))
@@ -73,10 +96,13 @@ def collect_ranked_photo_matches(
     if not rows:
         return [], float(threshold_percent), False
 
+    photo_ids = [row[0] for row in rows]
+    embeddings = [row[1] for row in rows]
+    scores = batch_cosine_similarities(selfie_embedding, embeddings)
+
     best_percent_by_photo: dict[str, float] = defaultdict(float)
-    for photo_id, embedding in rows:
-        cosine = cosine_similarity(selfie_embedding, embedding)
-        percent = cosine_to_percent(cosine)
+    for photo_id, cosine in zip(photo_ids, scores):
+        percent = cosine_to_percent(float(cosine))
         if percent > best_percent_by_photo[photo_id]:
             best_percent_by_photo[photo_id] = percent
 
@@ -149,10 +175,12 @@ def store_guest_results(
         return []
 
     best_by_photo: dict[str, float] = defaultdict(float)
-    for face in faces:
-        score = cosine_similarity(selfie_embedding, face.embedding)
-        if score > best_by_photo[face.photo_id]:
-            best_by_photo[face.photo_id] = score
+    face_photo_ids = [face.photo_id for face in faces]
+    embeddings = [face.embedding for face in faces]
+    scores = batch_cosine_similarities(selfie_embedding, embeddings)
+    for photo_id, score in zip(face_photo_ids, scores):
+        if float(score) > best_by_photo[photo_id]:
+            best_by_photo[photo_id] = float(score)
 
     ordered = sorted(best_by_photo.items(), key=lambda item: item[1], reverse=True)[: max(1, int(limit))]
     photo_map = {

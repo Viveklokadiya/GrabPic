@@ -34,6 +34,7 @@ def cluster_event_faces(db: Session, *, event_id: str, eps: float, min_samples: 
 
     labels = DBSCAN(eps=float(eps), min_samples=int(min_samples), metric="cosine").fit_predict(vectors)
     per_cluster: dict[int, list[Face]] = {}
+    per_cluster_indices: dict[int, list[int]] = {}
 
     for idx, face in enumerate(faces):
         label = int(labels[idx])
@@ -42,10 +43,12 @@ def cluster_event_faces(db: Session, *, event_id: str, eps: float, min_samples: 
         else:
             face.cluster_label = label
             per_cluster.setdefault(label, []).append(face)
+            per_cluster_indices.setdefault(label, []).append(idx)
         db.add(face)
 
     for cluster_label, cluster_faces in per_cluster.items():
-        centroid = normalize(np.mean(np.asarray([f.embedding for f in cluster_faces], dtype=np.float32), axis=0))
+        cluster_vecs = vectors[per_cluster_indices[cluster_label]]
+        centroid = normalize(np.mean(cluster_vecs, axis=0))
         by_photo = Counter([f.photo_id for f in cluster_faces])
         cover_photo_id = by_photo.most_common(1)[0][0] if by_photo else None
         cluster = FaceCluster(
