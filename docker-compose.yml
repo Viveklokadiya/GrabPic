@@ -63,7 +63,7 @@ services:
       AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-336}
       WORKER_CONCURRENCY: "2"
       AUTO_SYNC_ENABLED: "true"
-      AUTO_SYNC_INTERVAL_MINUTES: "5"
+      AUTO_SYNC_INTERVAL_MINUTES: "1"
       AUTO_SYNC_BATCH_SIZE: "4"
     command: python -m app.worker
     volumes:
@@ -88,4 +88,6 @@ services:
 
 volumes:
   pgdata:
+    name: drive-face-dashboard_pgdata
   backend_storage:
+    name: drive-face-dashboard_backend_storage

@@ -98,10 +98,16 @@ export default function PhotographerEventDetailsPage() {
 
   async function refreshStatus() {
     if (!eventId) return;
+    const previous = statusRef.current;
     const next = await getPhotographerEventStatus(eventId);
     statusRef.current = next;
     setStatusData(next);
-    if (next.status === "COMPLETED") await loadPhotos();
+    const hasCountChange =
+      previous?.processed_photos !== next.processed_photos ||
+      previous?.total_photos !== next.total_photos ||
+      previous?.failed_photos !== next.failed_photos;
+    const completedTransition = next.status === "COMPLETED" && previous?.status !== "COMPLETED";
+    if (hasCountChange || completedTransition) await loadPhotos();
   }
 
   async function loadAll() {
@@ -124,12 +130,11 @@ export default function PhotographerEventDetailsPage() {
 
   useEffect(() => {
     if (!eventId) return;
-    if (!isActiveStatus(statusData?.status)) return;
     const timer = setInterval(() => {
       void refreshStatus();
-    }, 3000);
+    }, 5000);
     return () => clearInterval(timer);
-  }, [eventId, statusData?.status]);
+  }, [eventId]);
 
   async function onSync() {
     setSyncing(true);
@@ -156,7 +161,7 @@ export default function PhotographerEventDetailsPage() {
     }
   }
 
-  const sc = statusConfig(eventData?.status ?? "");
+  const sc = statusConfig(statusData?.status ?? eventData?.status ?? "");
   const progress = Math.max(0, Math.min(100, statusData?.progress_percentage ?? 0));
   const guestList = guests?.guests ?? [];
   const processed = Math.max(0, statusData?.processed_photos ?? 0);
@@ -178,6 +183,16 @@ export default function PhotographerEventDetailsPage() {
     if (!publicGuestUrl) return "";
     return `/qr?size=320&data=${encodeURIComponent(publicGuestUrl)}`;
   }, [publicGuestUrl]);
+  const eventPages = useMemo(() => {
+    const syncMeta = statusData ? `${statusData.status} • ${progress.toFixed(0)}%` : "Not started";
+    const guestMeta = `${guestList.length} guest${guestList.length === 1 ? "" : "s"}`;
+    const settingsMeta = eventData?.drive_folder_id ? "Drive connected" : "Drive not connected";
+    return [
+      { href: `/photographer/events/${eventId}/sync`, icon: "sync_alt", label: "Live Sync Monitor", meta: syncMeta },
+      { href: `/photographer/events/${eventId}/guests`, icon: "group", label: "Guest Management", meta: guestMeta },
+      { href: `/photographer/events/${eventId}/settings`, icon: "settings", label: "Event Settings", meta: settingsMeta },
+    ];
+  }, [eventId, eventData?.drive_folder_id, guestList.length, progress, statusData]);
 
   if (loading) {
     return (
@@ -453,18 +468,15 @@ export default function PhotographerEventDetailsPage() {
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="mb-3 text-sm font-bold text-slate-700">Event Pages</h3>
             <div className="flex flex-col gap-2">
-              {[
-                { href: `/photographer/events/${eventId}/sync`, icon: "sync_alt", label: "Live Sync Monitor" },
-                { href: `/photographer/events/${eventId}/guests`, icon: "group", label: "Guest Management" },
-                { href: `/photographer/events/${eventId}/settings`, icon: "settings", label: "Event Settings" },
-              ].map((l) => (
+              {eventPages.map((l) => (
                 <Link
                   key={l.href}
                   href={l.href}
                   className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-600 transition-colors hover:bg-slate-50 hover:text-primary"
                 >
                   <span className="material-symbols-outlined text-[18px]">{l.icon}</span>
-                  {l.label}
+                  <span className="flex-1">{l.label}</span>
+                  <span className="text-[11px] font-semibold text-slate-400">{l.meta}</span>
                 </Link>
               ))}
             </div>

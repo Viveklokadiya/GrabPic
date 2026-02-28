@@ -15,6 +15,8 @@ from app.services.clustering import cluster_event_faces
 from app.services.jobs import (
     JOB_CLUSTER_EVENT,
     JOB_MATCH_GUEST,
+    JOB_STATUS_QUEUED,
+    JOB_STATUS_RUNNING,
     JOB_SYNC_EVENT,
     JOB_STATUS_CANCELED,
     JOB_STATUS_CANCEL_REQUESTED,

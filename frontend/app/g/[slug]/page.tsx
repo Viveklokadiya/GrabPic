@@ -55,6 +55,8 @@ export default function GuestUploadPage() {
   const [error, setError] = useState("");
 
   const pollingInFlightRef = useRef(false);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const filePickerInputRef = useRef<HTMLInputElement | null>(null);
   const polling = isPollingStatus(match?.status);
   const showInlineResults = hasResults(match);
   const session = getAuthSession();
@@ -328,7 +330,25 @@ export default function GuestUploadPage() {
             </div>
 
             <form onSubmit={onSubmit} className="p-8 flex flex-col gap-6">
-              <label
+              <input
+                key={`${fileInputKey}-camera`}
+                ref={cameraInputRef}
+                className="hidden"
+                type="file"
+                accept="image/*"
+                capture="user"
+                onChange={(event) => handleFile(event.target.files?.[0] || null)}
+              />
+              <input
+                key={`${fileInputKey}-file`}
+                ref={filePickerInputRef}
+                className="hidden"
+                type="file"
+                accept="image/*"
+                onChange={(event) => handleFile(event.target.files?.[0] || null)}
+              />
+
+              <div
                 className={`group relative flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-xl cursor-pointer transition-all ${dragging ? "border-primary/80 bg-primary-light" : "border-slate-200 bg-slate-50 hover:border-primary/60 hover:bg-primary-light/30"}`}
                 onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
@@ -337,15 +357,8 @@ export default function GuestUploadPage() {
                   setDragging(false);
                   handleFile(event.dataTransfer.files?.[0] || null);
                 }}
+                onClick={() => filePickerInputRef.current?.click()}
               >
-                <input
-                  key={fileInputKey}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => handleFile(event.target.files?.[0] || null)}
-                  required
-                />
                 {preview ? (
                   <div className="flex flex-col items-center gap-3 transition-transform duration-300">
                     <div className="size-24 rounded-full overflow-hidden border-4 border-white shadow-lg">
@@ -353,7 +366,7 @@ export default function GuestUploadPage() {
                       <img src={preview} alt="Selfie preview" className="w-full h-full object-cover" />
                     </div>
                     <p className="text-slate-800 font-bold">Looking good! 🎉</p>
-                    <p className="text-slate-400 text-sm">Click to change photo</p>
+                    <p className="text-slate-400 text-sm">Tap buttons below to change photo</p>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-4 transition-transform duration-300 group-hover:scale-105">
@@ -361,12 +374,33 @@ export default function GuestUploadPage() {
                       <span className="material-symbols-outlined text-[32px]">add_a_photo</span>
                     </div>
                     <div className="text-center">
-                      <p className="text-slate-900 font-bold text-lg mb-1">Click to upload selfie</p>
+                      <p className="text-slate-900 font-bold text-lg mb-1">Use Camera or Choose File</p>
                       <p className="text-slate-400 text-sm">or drag and drop here</p>
                     </div>
                   </div>
                 )}
-              </label>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  disabled={uploading || polling}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[18px]">photo_camera</span>
+                  Use Camera
+                </button>
+                <button
+                  type="button"
+                  onClick={() => filePickerInputRef.current?.click()}
+                  disabled={uploading || polling}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[18px]">upload_file</span>
+                  Choose File
+                </button>
+              </div>
 
               <div className="flex items-center justify-center gap-2 text-slate-400 text-xs text-center">
                 <span className="material-symbols-outlined text-[16px]">lock</span>

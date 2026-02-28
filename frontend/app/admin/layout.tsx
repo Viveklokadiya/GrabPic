@@ -1,14 +1,35 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useState } from "react";
 
-export default function AdminLayout() {
-  const router = useRouter();
+import { RequireRole } from "@/components/auth-guard";
+import AdminSidebar from "@/components/admin-sidebar";
 
-  useEffect(() => {
-    router.replace("/photographer");
-  }, [router]);
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const openSidebar = useCallback(() => setSidebarOpen(true), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
-  return <div className="page-wrap text-sm text-muted">Redirecting to photographer dashboard...</div>;
+  return (
+    <RequireRole allowedRoles={["SUPER_ADMIN", "ADMIN"]}>
+      <div className="flex min-h-screen w-full flex-row overflow-hidden bg-slate-50">
+        <AdminSidebar mobileOpen={sidebarOpen} onClose={closeSidebar} />
+        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm lg:hidden">
+            <button
+              type="button"
+              onClick={openSidebar}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700"
+              aria-label="Open navigation"
+            >
+              <span className="material-symbols-outlined text-[18px]">menu</span>
+              Menu
+            </button>
+            <p className="text-sm font-semibold text-slate-800">Admin Panel</p>
+          </div>
+          {children}
+        </main>
+      </div>
+    </RequireRole>
+  );
 }
